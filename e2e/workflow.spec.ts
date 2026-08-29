@@ -141,7 +141,16 @@ function needColumn(page: Page, title: "Needs help" | "Needs review" | "Resolved
 
 test("two WebMCP sessions contribute, cross-review, resolve, and refresh the mission UI", async ({
   browser,
+  request,
 }, testInfo) => {
+  const callerChosenToken = crypto.randomUUID();
+  const sessionResponse = await request.get("/api/world", {
+    headers: { cookie: `os_session=${callerChosenToken}` },
+  });
+  const issuedCookie = sessionResponse.headers()["set-cookie"] ?? "";
+  expect(issuedCookie).toContain("os_session=");
+  expect(issuedCookie).not.toContain(callerChosenToken);
+
   const sessionA = await browser.newContext({
     extraHTTPHeaders: { "cf-connecting-ip": `e2e-session-a-${crypto.randomUUID()}` },
   });
@@ -302,6 +311,17 @@ test("two WebMCP sessions contribute, cross-review, resolve, and refresh the mis
       },
     }),
   ).rejects.toThrow(/160|too big|maximum/i);
+
+  const invalidWorkerResponse = await pageB.request.post("/api/needs", {
+    data: {
+      mission_id: mission.id,
+      title: "x".repeat(161),
+      instructions: "This request bypasses WebMCP and must fail at the Worker boundary.",
+      rationale: "Direct HTTP input remains independently bounded.",
+    },
+  });
+  expect(invalidWorkerResponse.status()).toBe(400);
+  expect(await invalidWorkerResponse.json()).toMatchObject({ status: "invalid_input" });
 
   const reopenTitle = `E2E needs-work branch ${testInfo.workerIndex}-${crypto.randomUUID()}`;
   const reopenNeed = await invokeTool(pageA, {

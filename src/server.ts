@@ -1,11 +1,11 @@
 import { z } from "zod";
 import {
-  evidenceListSchema,
-  contributionResultSchema,
-  nextWorkInputSchema,
-  proposeNeedInputSchema,
-  reviewContributionInputSchema,
-  submitContributionInputSchema,
+  ContributionResultSchema,
+  EvidenceListSchema,
+  GetNextWorkInputSchema,
+  ProposeNeedInputSchema,
+  ReviewContributionInputSchema,
+  SubmitContributionInputSchema,
   type ApiErrorResponse
 } from "./contracts";
 
@@ -136,6 +136,13 @@ interface ContributionContextRow extends ContributionRow {
   mission_title: string;
 }
 
+interface ReviewContextRow {
+  id: string;
+  session_id: string;
+  status: ContributionRow["status"];
+  need_status: NeedRow["status"];
+}
+
 class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -152,7 +159,7 @@ const worldLimitSchema = z.coerce.number().int().min(1).max(20).default(10);
 const sessionPattern = /^[0-9a-f-]{36}$/;
 const sessionCookie = "os_session";
 
-function json(value: object, status = 200, session?: Session): Response {
+function json<Value>(value: Value, status = 200, session?: Session): Response {
   const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
   if (session?.created) {
     const secure = session.secure ? "Secure; " : "";
@@ -176,25 +183,30 @@ function cookieValue(request: Request, name: string): string | null {
 
 async function ensureSession(request: Request, env: Env): Promise<Session> {
   const supplied = cookieValue(request, sessionCookie);
-  const token = supplied && sessionPattern.test(supplied) ? supplied : crypto.randomUUID();
-  const tokenHash = await hashText(`openshare-session:${token}`);
   const now = new Date().toISOString();
-  const existing = await env.DB.prepare("SELECT id FROM sessions WHERE token_hash = ?")
-    .bind(tokenHash)
-    .first<{ id: string }>();
-  const id = existing?.id ?? crypto.randomUUID();
+  const secure = new URL(request.url).protocol === "https:";
+  if (supplied && sessionPattern.test(supplied)) {
+    const tokenHash = await hashText(`openshare-session:${supplied}`);
+    const existing = await env.DB.prepare("SELECT id FROM sessions WHERE token_hash = ?")
+      .bind(tokenHash)
+      .first<{ id: string }>();
+    if (existing) {
+      await env.DB.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?")
+        .bind(now, existing.id)
+        .run();
+      return { id: existing.id, token: supplied, created: false, secure };
+    }
+  }
+
+  const id = crypto.randomUUID();
+  const token = crypto.randomUUID();
+  const tokenHash = await hashText(`openshare-session:${token}`);
   await env.DB.prepare(
-    "INSERT INTO sessions (id, token_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?) " +
-      "ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at"
+    "INSERT INTO sessions (id, token_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?)"
   )
     .bind(id, tokenHash, now, now)
     .run();
-  return {
-    id,
-    token,
-    created: existing === null,
-    secure: new URL(request.url).protocol === "https:"
-  };
+  return { id, token, created: true, secure };
 }
 
 async function hashText(value: string): Promise<string> {
@@ -288,8 +300,8 @@ function presentContribution(row: ContributionRow) {
     need_id: row.need_id,
     actor_label: `Session ${row.session_id.slice(0, 6)}`,
     summary: row.summary,
-    result: contributionResultSchema.parse(JSON.parse(row.result_json)),
-    evidence: evidenceListSchema.parse(JSON.parse(row.evidence_json)),
+    result: ContributionResultSchema.parse(JSON.parse(row.result_json)),
+    evidence: EvidenceListSchema.parse(JSON.parse(row.evidence_json)),
     status: row.status,
     created_at: row.created_at
   };
@@ -302,7 +314,7 @@ function presentReview(row: ReviewRow) {
     reviewer_label: `Session ${row.reviewer_session_id.slice(0, 6)}`,
     verdict: row.verdict,
     reason: row.reason,
-    evidence: evidenceListSchema.parse(JSON.parse(row.evidence_json)),
+    evidence: EvidenceListSchema.parse(JSON.parse(row.evidence_json)),
     created_at: row.created_at
   };
 }
@@ -477,7 +489,7 @@ async function contributionDetail(env: Env, id: string) {
   };
 }
 
-async function nextWork(env: Env, session: Session, body: z.infer<typeof nextWorkInputSchema>) {
+async function nextWork(env: Env, session: Session, body: z.infer<typeof GetNextWorkInputSchema>) {
   const mode = body.mode ?? "any";
   if (mode !== "contribute") {
     let sql =
@@ -517,8 +529,8 @@ async function nextWork(env: Env, session: Session, body: z.infer<typeof nextWor
         contribution: {
           id: review.id,
           summary: review.summary,
-          result: contributionResultSchema.parse(JSON.parse(review.result_json)),
-          evidence: evidenceListSchema.parse(JSON.parse(review.evidence_json))
+          result: ContributionResultSchema.parse(JSON.parse(review.result_json)),
+          evidence: EvidenceListSchema.parse(JSON.parse(review.evidence_json))
         },
         why_now: "This contribution is the oldest eligible item waiting for cross-session review.",
         done_when: "Check the work and call review_contribution."
@@ -569,14 +581,13 @@ async function nextWork(env: Env, session: Session, body: z.infer<typeof nextWor
 async function submitContribution(
   env: Env,
   session: Session,
-  input: z.infer<typeof submitContributionInputSchema>
+  input: z.infer<typeof SubmitContributionInputSchema>
 ) {
   const need = await env.DB.prepare(
-    "SELECT id, mission_id, kind, title, instructions, rationale, acceptance_criteria_json, priority, status, " +
-      "parent_need_id, created_at, updated_at FROM needs WHERE id = ?"
+    "SELECT id, status FROM needs WHERE id = ?"
   )
     .bind(input.need_id)
-    .first<NeedRow>();
+    .first<Pick<NeedRow, "id" | "status">>();
   if (!need || need.status !== "open") {
     throw new HttpError(409, "This Need is no longer open. Ask for another useful item.", "need_unavailable");
   }
@@ -611,15 +622,14 @@ async function submitContribution(
 async function reviewContribution(
   env: Env,
   session: Session,
-  input: z.infer<typeof reviewContributionInputSchema>
+  input: z.infer<typeof ReviewContributionInputSchema>
 ) {
   const contribution = await env.DB.prepare(
-    "SELECT c.id, c.need_id, c.session_id, c.summary, c.result_json, c.evidence_json, c.status, c.created_at, " +
-      "n.title AS need_title, n.status AS need_status, m.id AS mission_id, m.slug AS mission_slug, m.title AS mission_title " +
-      "FROM contributions c JOIN needs n ON n.id = c.need_id JOIN missions m ON m.id = n.mission_id WHERE c.id = ?"
+    "SELECT c.id, c.session_id, c.status, n.status AS need_status " +
+      "FROM contributions c JOIN needs n ON n.id = c.need_id WHERE c.id = ?"
   )
     .bind(input.contribution_id)
-    .first<ContributionContextRow>();
+    .first<ReviewContextRow>();
   if (!contribution) throw new HttpError(404, "Contribution not found.", "not_found");
   if (contribution.session_id === session.id) {
     throw new HttpError(403, "A session cannot review its own contribution.", "self_review_forbidden");
@@ -666,14 +676,13 @@ async function reviewContribution(
 async function proposeNeed(
   env: Env,
   session: Session,
-  input: z.infer<typeof proposeNeedInputSchema>
+  input: z.infer<typeof ProposeNeedInputSchema>
 ) {
   const mission = await env.DB.prepare(
-    "SELECT id, slug, title, goal, description, type, status, created_at, updated_at " +
-      "FROM missions WHERE id = ? AND status = 'active'"
+    "SELECT id FROM missions WHERE id = ? AND status = 'active'"
   )
     .bind(input.mission_id)
-    .first<MissionRow>();
+    .first<{ id: string }>();
   if (!mission) throw new HttpError(404, "Active mission not found.", "not_found");
   if (input.parent_need_id) {
     const parent = await env.DB.prepare("SELECT id FROM needs WHERE id = ? AND mission_id = ?")
@@ -732,19 +741,19 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
   const writePath = ["/api/contributions", "/api/reviews", "/api/needs"].includes(url.pathname);
   if (request.method === "POST" && writePath) await enforceWriteLimit(request, env, session);
   if (request.method === "POST" && url.pathname === "/api/work/next") {
-    const input = nextWorkInputSchema.parse(await request.json());
+    const input = GetNextWorkInputSchema.parse(await request.json());
     return json(await nextWork(env, session, input), 200, session);
   }
   if (request.method === "POST" && url.pathname === "/api/contributions") {
-    const input = submitContributionInputSchema.parse(await request.json());
+    const input = SubmitContributionInputSchema.parse(await request.json());
     return json(await submitContribution(env, session, input), 201, session);
   }
   if (request.method === "POST" && url.pathname === "/api/reviews") {
-    const input = reviewContributionInputSchema.parse(await request.json());
+    const input = ReviewContributionInputSchema.parse(await request.json());
     return json(await reviewContribution(env, session, input), 201, session);
   }
   if (request.method === "POST" && url.pathname === "/api/needs") {
-    const input = proposeNeedInputSchema.parse(await request.json());
+    const input = ProposeNeedInputSchema.parse(await request.json());
     return json(await proposeNeed(env, session, input), 201, session);
   }
   throw new HttpError(404, "API route not found.");

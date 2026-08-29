@@ -6,10 +6,12 @@ OpenShare was implemented with reference to these locally pinned projects:
 - GoogleChromeLabs `use-webmcp-tool`, commit `4a9505e7dc2e82a8468d7510dde264915bc7d394`, Apache License 2.0, Copyright Google LLC.
 - GoogleChromeLabs `webmcp-tools`, commit `97e6fbe83fc3f2e3c6df2198b962dd2ad59cb924`, Apache License 2.0, Copyright Google LLC.
 - Thinkroom, commit `259fad051e62b0f03bcf34b1cd3dda1102e4ed28`, MIT License, Copyright Kieran Klaassen.
+- React and ReactDOM 19.2.8, MIT License, Copyright Meta Platforms, Inc. and affiliates.
+- Zod 4.4.3, MIT License, Copyright Colin McDonnell.
 
 The WebMCP registration lifecycle, schema generation, D1 binding, append-only
 activity, and browser evaluation approaches were adapted from these sources.
-The complete MIT notices for adapted starter/product patterns are distributed
-in [`licenses/`](./licenses). Apache-2.0 reference material is covered by the
-complete repository [LICENSE](./LICENSE); upstream copyright notices above are
-retained here.
+The complete MIT notices for adapted patterns and bundled runtime dependencies
+are distributed in [`licenses/`](./licenses). Apache-2.0 reference material is
+covered by the complete repository [LICENSE](./LICENSE); upstream copyright
+notices above are retained here.
