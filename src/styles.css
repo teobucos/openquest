@@ -62,7 +62,7 @@ main { width: min(1440px, 100%); margin: 0 auto; }
 .text-button, .quiet-button { background: transparent; color: var(--acid); border: 0; padding: 9px 0; cursor: pointer; font: 11px "DM Mono", monospace; text-align: left; }
 .action-form, .review-form { margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
 .action-form label { display: grid; gap: 6px; color: var(--muted); font: 10px "DM Mono", monospace; }
-.action-form input, .action-form textarea, .review-form input, .review-form select { width: 100%; border: 1px solid #394139; background: #0c100d; color: var(--ink); padding: 11px; outline: none; }
+.action-form input, .action-form textarea, .review-form input, .review-form select { width: 100%; border: 1px solid #394139; background: #0c100d; color: var(--ink); padding: 11px; }
 .form-actions { display: flex; gap: 12px; } .quiet-button { color: var(--muted); padding: 8px; } .form-error { color: #ff8f82 !important; font-size: 11px !important; } .form-note { color: var(--muted); font-size: 12px; }
 .resolved-stamp { color: var(--acid); border-top: 1px solid var(--line); padding-top: 14px; margin-top: 18px; font: 9px "DM Mono", monospace; }
 .propose-panel { padding: 45px clamp(22px, 5vw, 78px); max-width: 720px; } .propose-panel .action-form { border: 1px solid var(--line); padding: 20px; }

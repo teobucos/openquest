@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useState } from "react";
+import type { ZodType } from "zod";
 import {
   ApiError,
   getNextWork,
@@ -8,11 +9,11 @@ import {
   submitContribution,
 } from "./api";
 import {
-  nextWorkInputSchema,
-  observeMissionsInputSchema,
-  proposeNeedInputSchema,
-  reviewContributionInputSchema,
-  submitContributionInputSchema,
+  GetNextWorkInputSchema,
+  ObserveMissionsInputSchema,
+  ProposeNeedInputSchema,
+  ReviewContributionInputSchema,
+  SubmitContributionInputSchema,
   WebMCPToolInputJsonSchemas,
   type ObserveMissionsResponse,
 } from "./contracts";
@@ -45,17 +46,52 @@ function errorResult(message: string): WebMCPToolResult {
   };
 }
 
-function failureMessage(caught: Error): string {
-  if (caught instanceof ApiError) return caught.message;
-  return caught.message || "OpenShare could not complete that action. Please refresh shared state and try again.";
+function failureMessage(cause: unknown): string {
+  if (cause instanceof ApiError) return cause.message;
+  if (cause instanceof Error) {
+    return cause.message || "OpenShare could not complete that action. Please refresh shared state and try again.";
+  }
+  return "Invalid input.";
 }
 
-function dispatchChange(action: "contribution" | "need" | "review"): void {
+type ChangeAction = "contribution" | "need" | "review";
+
+function dispatchChange(action: ChangeAction): void {
   window.dispatchEvent(
     new CustomEvent("openshare:changed", {
       detail: { action },
     }),
   );
+}
+
+async function executeTool<Input, Result>(
+  schema: ZodType<Input>,
+  input: WebMCPInput,
+  execute: (parsed: Input, signal: AbortSignal) => Promise<Result>,
+  controllerSignal: AbortSignal,
+  callSignal?: AbortSignal,
+  change?: ChangeAction,
+): Promise<WebMCPToolResult> {
+  try {
+    const signal = callSignal
+      ? AbortSignal.any([controllerSignal, callSignal])
+      : controllerSignal;
+    const result = await execute(schema.parse(input), signal);
+    if (change) dispatchChange(change);
+    return textResult(result);
+  } catch (cause) {
+    return errorResult(failureMessage(cause));
+  }
+}
+
+function bindTool<Input, Result>(
+  schema: ZodType<Input>,
+  execute: (parsed: Input, signal: AbortSignal) => Promise<Result>,
+  controllerSignal: AbortSignal,
+  change?: ChangeAction,
+): WebMCPTool["execute"] {
+  return (input, options) =>
+    executeTool(schema, input, execute, controllerSignal, options?.signal, change);
 }
 
 function presentObservation(result: ObserveMissionsResponse) {
@@ -109,25 +145,16 @@ export function useWebMCPTools(): WebMCPToolsState {
     const controller = new AbortController();
     setState({ error: null, registered: false, supported: true });
 
-    function executionSignal(callSignal?: AbortSignal): AbortSignal {
-      return callSignal
-        ? AbortSignal.any([controller.signal, callSignal])
-        : controller.signal;
-    }
-
     const tools: WebMCPTool[] = [
       {
         annotations: readAnnotations,
         description:
           "Inspect current OpenShare missions, needs, contributions, and cross-session review progress.",
-        async execute(input, options) {
-          try {
-            const parsed = observeMissionsInputSchema.parse(input);
-            return textResult(presentObservation(await observeMissions(parsed, executionSignal(options?.signal))));
-          } catch (caught) {
-            return errorResult(failureMessage(caught instanceof Error ? caught : new Error("Invalid input.")));
-          }
-        },
+        execute: bindTool(
+          ObserveMissionsInputSchema,
+          async (input, signal) => presentObservation(await observeMissions(input, signal)),
+          controller.signal,
+        ),
         inputSchema: WebMCPToolInputJsonSchemas.observe_missions,
         name: "observe_missions",
       },
@@ -135,14 +162,7 @@ export function useWebMCPTools(): WebMCPToolsState {
         annotations: readAnnotations,
         description:
           "Return one useful open Need or pending Contribution to work on without changing shared state.",
-        async execute(input, options) {
-          try {
-            const parsed = nextWorkInputSchema.parse(input);
-            return textResult(await getNextWork(parsed, executionSignal(options?.signal)));
-          } catch (caught) {
-            return errorResult(failureMessage(caught instanceof Error ? caught : new Error("Invalid input.")));
-          }
-        },
+        execute: bindTool(GetNextWorkInputSchema, getNextWork, controller.signal),
         inputSchema: WebMCPToolInputJsonSchemas.get_next_work,
         name: "get_next_work",
       },
@@ -150,16 +170,12 @@ export function useWebMCPTools(): WebMCPToolsState {
         annotations: writeAnnotations,
         description:
           "Submit a bounded evidence-backed contribution for one open OpenShare Need.",
-        async execute(input, options) {
-          try {
-            const parsed = submitContributionInputSchema.parse(input);
-            const result = await submitContribution(parsed, executionSignal(options?.signal));
-            dispatchChange("contribution");
-            return textResult(result);
-          } catch (caught) {
-            return errorResult(failureMessage(caught instanceof Error ? caught : new Error("Invalid input.")));
-          }
-        },
+        execute: bindTool(
+          SubmitContributionInputSchema,
+          submitContribution,
+          controller.signal,
+          "contribution",
+        ),
         inputSchema: WebMCPToolInputJsonSchemas.submit_contribution,
         name: "submit_contribution",
       },
@@ -167,16 +183,12 @@ export function useWebMCPTools(): WebMCPToolsState {
         annotations: writeAnnotations,
         description:
           "Review another browser session's contribution and support, challenge, or request more work.",
-        async execute(input, options) {
-          try {
-            const parsed = reviewContributionInputSchema.parse(input);
-            const result = await reviewContribution(parsed, executionSignal(options?.signal));
-            dispatchChange("review");
-            return textResult(result);
-          } catch (caught) {
-            return errorResult(failureMessage(caught instanceof Error ? caught : new Error("Invalid input.")));
-          }
-        },
+        execute: bindTool(
+          ReviewContributionInputSchema,
+          reviewContribution,
+          controller.signal,
+          "review",
+        ),
         inputSchema: WebMCPToolInputJsonSchemas.review_contribution,
         name: "review_contribution",
       },
@@ -184,16 +196,7 @@ export function useWebMCPTools(): WebMCPToolsState {
         annotations: writeAnnotations,
         description:
           "Propose a specific, bounded new Need that would advance an existing OpenShare mission.",
-        async execute(input, options) {
-          try {
-            const parsed = proposeNeedInputSchema.parse(input);
-            const result = await proposeNeed(parsed, executionSignal(options?.signal));
-            dispatchChange("need");
-            return textResult(result);
-          } catch (caught) {
-            return errorResult(failureMessage(caught instanceof Error ? caught : new Error("Invalid input.")));
-          }
-        },
+        execute: bindTool(ProposeNeedInputSchema, proposeNeed, controller.signal, "need"),
         inputSchema: WebMCPToolInputJsonSchemas.propose_need,
         name: "propose_need",
       },

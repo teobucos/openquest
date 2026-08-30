@@ -1,7 +1,11 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-
-type WorkMode = "any" | "contribute" | "review";
-type ReviewVerdict = "support" | "challenge" | "needs_work";
+import type {
+  GetNextWorkInput,
+  ObserveMissionsInput,
+  ProposeNeedInput,
+  ReviewContributionInput,
+  SubmitContributionInput,
+} from "../src/contracts";
 
 interface Mission {
   readonly id: string;
@@ -33,29 +37,22 @@ interface ToolResult {
   readonly need_id?: string;
 }
 
-interface ToolInvocation {
-  readonly name:
-    | "observe_missions"
-    | "get_next_work"
-    | "submit_contribution"
-    | "review_contribution"
-    | "propose_need";
-  readonly input: {
-    readonly mission_id?: string;
-    readonly mode?: WorkMode;
-    readonly need_id?: string;
-    readonly summary?: string;
-    readonly result?: {
-      readonly answer: string;
-    };
-    readonly contribution_id?: string;
-    readonly verdict?: ReviewVerdict;
-    readonly reason?: string;
-    readonly title?: string;
-    readonly instructions?: string;
-    readonly rationale?: string;
-  };
+type OptionalFields<Type, Fields extends keyof Type> = Omit<Type, Fields> & Partial<Pick<Type, Fields>>;
+
+interface ToolInputs {
+  readonly observe_missions: OptionalFields<ObserveMissionsInput, "limit">;
+  readonly get_next_work: OptionalFields<GetNextWorkInput, "mode">;
+  readonly submit_contribution: OptionalFields<SubmitContributionInput, "evidence">;
+  readonly review_contribution: OptionalFields<ReviewContributionInput, "evidence">;
+  readonly propose_need: ProposeNeedInput;
 }
+
+type ToolInvocation = {
+  [Name in keyof ToolInputs]: {
+    readonly name: Name;
+    readonly input: ToolInputs[Name];
+  };
+}[keyof ToolInputs];
 
 declare global {
   interface Window {
@@ -141,7 +138,20 @@ function needColumn(page: Page, title: "Needs help" | "Needs review" | "Resolved
 
 test("two WebMCP sessions contribute, cross-review, resolve, and refresh the mission UI", async ({
   browser,
+  request,
 }, testInfo) => {
+  const callerChosenToken = crypto.randomUUID();
+  const sessionResponse = await request.get("/api/world", {
+    headers: {
+      cookie: `os_session=${callerChosenToken}`,
+      "x-forwarded-proto": "https",
+    },
+  });
+  const issuedCookie = sessionResponse.headers()["set-cookie"] ?? "";
+  expect(issuedCookie).toContain("os_session=");
+  expect(issuedCookie).not.toContain(callerChosenToken);
+  expect(issuedCookie).toContain("Secure");
+
   const sessionA = await browser.newContext({
     extraHTTPHeaders: { "cf-connecting-ip": `e2e-session-a-${crypto.randomUUID()}` },
   });
@@ -302,6 +312,17 @@ test("two WebMCP sessions contribute, cross-review, resolve, and refresh the mis
       },
     }),
   ).rejects.toThrow(/160|too big|maximum/i);
+
+  const invalidWorkerResponse = await pageB.request.post("/api/needs", {
+    data: {
+      mission_id: mission.id,
+      title: "x".repeat(161),
+      instructions: "This request bypasses WebMCP and must fail at the Worker boundary.",
+      rationale: "Direct HTTP input remains independently bounded.",
+    },
+  });
+  expect(invalidWorkerResponse.status()).toBe(400);
+  expect(await invalidWorkerResponse.json()).toMatchObject({ status: "invalid_input" });
 
   const reopenTitle = `E2E needs-work branch ${testInfo.workerIndex}-${crypto.randomUUID()}`;
   const reopenNeed = await invokeTool(pageA, {

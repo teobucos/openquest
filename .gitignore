@@ -1,4 +1,11 @@
+node_modules/
+dist/
+coverage/
+vendor-references/
 .wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 playwright-report/
 test-results/
 .env

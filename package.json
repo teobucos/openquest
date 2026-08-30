@@ -11,15 +11,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "deploy": "vite build && wrangler deploy",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "serve": "corepack pnpm run build && corepack pnpm run migrate:local && corepack pnpm run preview",
+    "deploy": "corepack pnpm run build && wrangler deploy",
+    "test": "vitest run --dir tests",
+    "test:watch": "vitest --dir tests",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
-    "migrate": "pnpm run migrate:local",
     "migrate:local": "wrangler d1 migrations apply openshare --local",
-    "migrate:remote": "wrangler d1 migrations apply openshare --remote",
-    "types": "wrangler types --env-interface Env"
+    "migrate:remote": "wrangler d1 migrations apply openshare --remote"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.8.1",
@@ -30,13 +30,10 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.2.0",
     "@types/node": "^22.15.3",
     "@cloudflare/workers-types": "^4.20250829.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
-    "jsdom": "^26.1.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
     "vitest": "^3.1.2",

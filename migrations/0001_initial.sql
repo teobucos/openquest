@@ -121,13 +121,6 @@ CREATE INDEX reviews_by_contribution_created
   ON reviews (contribution_id, created_at ASC);
 CREATE INDEX events_by_mission_sequence
   ON events (mission_id, sequence ASC);
-CREATE INDEX events_by_created_at
-  ON events (created_at DESC);
-CREATE INDEX sessions_by_last_seen_at
-  ON sessions (last_seen_at DESC);
-CREATE INDEX rate_limits_by_updated_at
-  ON rate_limits (updated_at ASC);
-
 CREATE TRIGGER needs_created_event
 AFTER INSERT ON needs
 FOR EACH ROW

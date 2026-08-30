@@ -1,0 +1,49 @@
+[Unit]
+Description=OpenShare local Worker preview
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agent
+Group=agent
+WorkingDirectory=/root/openshare
+Environment=NODE_ENV=production
+Environment=HOME=/home/agent
+Environment=XDG_CACHE_HOME=/home/agent/.cache
+ExecStart=/usr/bin/corepack pnpm run serve
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=120s
+TimeoutStopSec=30s
+KillMode=control-group
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/root/openshare
+ReadWritePaths=/root/openshare/dist
+ReadWritePaths=/root/openshare/.wrangler
+ReadWritePaths=/root/openshare/node_modules/.vite
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ProcSubset=pid
+ProtectProc=invisible
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=openshare
+
+[Install]
+WantedBy=multi-user.target

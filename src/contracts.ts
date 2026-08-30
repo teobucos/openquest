@@ -22,7 +22,6 @@ export const EvidenceSchema = z
   .strict();
 
 export const EvidenceListSchema = z.array(EvidenceSchema).max(5);
-export const evidenceListSchema = EvidenceListSchema;
 
 const StructuredDataSchema = z.record(
   z.string().trim().min(1).max(64),
@@ -52,15 +51,6 @@ export const ContributionResultSchema = z
     answer: z.string().trim().min(1).max(6_000),
     structured_data: StructuredDataSchema.optional(),
     artifact: z.string().trim().max(12_000).optional(),
-  })
-  .strict();
-export const contributionResultSchema = ContributionResultSchema;
-
-export const SessionSchema = z
-  .object({
-    id: IdentifierSchema,
-    created_at: IsoTimestampSchema,
-    last_seen_at: IsoTimestampSchema,
   })
   .strict();
 
@@ -332,38 +322,6 @@ export const ApiErrorResponseSchema = z
   })
   .strict();
 
-export const observeMissionsInputSchema = ObserveMissionsInputSchema;
-export const nextWorkInputSchema = GetNextWorkInputSchema;
-export const submitContributionInputSchema = SubmitContributionInputSchema;
-export const reviewContributionInputSchema = ReviewContributionInputSchema;
-export const proposeNeedInputSchema = ProposeNeedInputSchema;
-export const WorldResponseSchema = ObserveMissionsResponseSchema;
-export const worldResponseSchema = WorldResponseSchema;
-export const missionResponseSchema = MissionResponseSchema;
-export const contributionResponseSchema = ContributionResponseSchema;
-export const observeMissionsResponseSchema = ObserveMissionsResponseSchema;
-export const nextWorkResponseSchema = GetNextWorkResponseSchema;
-export const submitContributionResponseSchema = SubmitContributionResponseSchema;
-export const reviewContributionResponseSchema = ReviewContributionResponseSchema;
-export const proposeNeedResponseSchema = ProposeNeedResponseSchema;
-
-export function parseInput<Schema extends z.ZodType>(
-  schema: Schema,
-  input: z.input<Schema>,
-): z.output<Schema> {
-  return schema.parse(input);
-}
-
-export const WebMCPToolInputSchemas = {
-  observe_missions: ObserveMissionsInputSchema,
-  get_next_work: GetNextWorkInputSchema,
-  submit_contribution: SubmitContributionInputSchema,
-  review_contribution: ReviewContributionInputSchema,
-  propose_need: ProposeNeedInputSchema,
-};
-
-export const toolInputSchemas = WebMCPToolInputSchemas;
-
 export const WebMCPToolInputJsonSchemas = {
   observe_missions: z.toJSONSchema(ObserveMissionsInputSchema, { target: "draft-7" }),
   get_next_work: z.toJSONSchema(GetNextWorkInputSchema, { target: "draft-7" }),
@@ -372,30 +330,14 @@ export const WebMCPToolInputJsonSchemas = {
   propose_need: z.toJSONSchema(ProposeNeedInputSchema, { target: "draft-7" }),
 };
 
-export const ApiResponseJsonSchemas = {
-  observe_missions: z.toJSONSchema(ObserveMissionsResponseSchema, { target: "draft-7" }),
-  mission: z.toJSONSchema(MissionResponseSchema, { target: "draft-7" }),
-  contribution: z.toJSONSchema(ContributionResponseSchema, { target: "draft-7" }),
-  get_next_work: z.toJSONSchema(GetNextWorkResponseSchema, { target: "draft-7" }),
-  submit_contribution: z.toJSONSchema(SubmitContributionResponseSchema, { target: "draft-7" }),
-  review_contribution: z.toJSONSchema(ReviewContributionResponseSchema, { target: "draft-7" }),
-  propose_need: z.toJSONSchema(ProposeNeedResponseSchema, { target: "draft-7" }),
-  error: z.toJSONSchema(ApiErrorResponseSchema, { target: "draft-7" }),
-};
-
-export type Session = z.infer<typeof SessionSchema>;
 export type Mission = z.infer<typeof MissionSchema>;
-export type Need = z.infer<typeof NeedSchema>;
-export type Contribution = z.infer<typeof ContributionSchema>;
-export type Review = z.infer<typeof ReviewSchema>;
-export type Event = z.infer<typeof EventSchema>;
 export type ObserveMissionsInput = z.infer<typeof ObserveMissionsInputSchema>;
 export type GetNextWorkInput = z.infer<typeof GetNextWorkInputSchema>;
 export type SubmitContributionInput = z.infer<typeof SubmitContributionInputSchema>;
 export type ReviewContributionInput = z.infer<typeof ReviewContributionInputSchema>;
 export type ProposeNeedInput = z.infer<typeof ProposeNeedInputSchema>;
 export type ObserveMissionsResponse = z.infer<typeof ObserveMissionsResponseSchema>;
-export type WorldResponse = z.infer<typeof WorldResponseSchema>;
+export type WorldResponse = ObserveMissionsResponse;
 export type MissionResponse = z.infer<typeof MissionResponseSchema>;
 export type ContributionResponse = z.infer<typeof ContributionResponseSchema>;
 export type GetNextWorkResponse = z.infer<typeof GetNextWorkResponseSchema>;

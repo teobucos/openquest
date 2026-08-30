@@ -1,11 +1,5 @@
 import { z } from "zod";
 import {
-  nextWorkInputSchema,
-  observeMissionsInputSchema,
-  parseInput,
-  proposeNeedInputSchema,
-  reviewContributionInputSchema,
-  submitContributionInputSchema,
   ApiErrorResponseSchema,
   ContributionResponseSchema,
   GetNextWorkResponseSchema,
@@ -14,7 +8,6 @@ import {
   ProposeNeedResponseSchema,
   ReviewContributionResponseSchema,
   SubmitContributionResponseSchema,
-  WorldResponseSchema,
   type ApiErrorResponse,
   type ContributionResponse,
   type GetNextWorkInput,
@@ -88,7 +81,7 @@ function missionQuery(missionId: string | undefined, limit?: number): string {
 }
 
 export function getWorld(missionId?: string, signal?: AbortSignal): Promise<WorldResponse> {
-  return request(missionQuery(missionId), WorldResponseSchema, { signal });
+  return request(missionQuery(missionId), ObserveMissionsResponseSchema, { signal });
 }
 
 export function getMission(slug: string, signal?: AbortSignal): Promise<MissionResponse> {
@@ -103,27 +96,24 @@ export function observeMissions(
   input: ObserveMissionsInput,
   signal?: AbortSignal,
 ): Promise<ObserveMissionsResponse> {
-  const parsed = parseInput(observeMissionsInputSchema, input);
-  return request(missionQuery(parsed.mission_id, parsed.limit), ObserveMissionsResponseSchema, { signal });
+  return request(missionQuery(input.mission_id, input.limit), ObserveMissionsResponseSchema, { signal });
 }
 
 export function getNextWork(
   input: GetNextWorkInput,
   signal?: AbortSignal,
 ): Promise<GetNextWorkResponse> {
-  const parsed = parseInput(nextWorkInputSchema, input);
-  return request("/api/work/next", GetNextWorkResponseSchema, postBody(parsed, signal));
+  return request("/api/work/next", GetNextWorkResponseSchema, postBody(input, signal));
 }
 
 export function submitContribution(
   input: SubmitContributionInput,
   signal?: AbortSignal,
 ): Promise<SubmitContributionResponse> {
-  const parsed = parseInput(submitContributionInputSchema, input);
   return request(
     "/api/contributions",
     SubmitContributionResponseSchema,
-    postBody(parsed, signal),
+    postBody(input, signal),
   );
 }
 
@@ -131,14 +121,12 @@ export function reviewContribution(
   input: ReviewContributionInput,
   signal?: AbortSignal,
 ): Promise<ReviewContributionResponse> {
-  const parsed = parseInput(reviewContributionInputSchema, input);
-  return request("/api/reviews", ReviewContributionResponseSchema, postBody(parsed, signal));
+  return request("/api/reviews", ReviewContributionResponseSchema, postBody(input, signal));
 }
 
 export function proposeNeed(
   input: ProposeNeedInput,
   signal?: AbortSignal,
 ): Promise<ProposeNeedResponse> {
-  const parsed = parseInput(proposeNeedInputSchema, input);
-  return request("/api/needs", ProposeNeedResponseSchema, postBody(parsed, signal));
+  return request("/api/needs", ProposeNeedResponseSchema, postBody(input, signal));
 }

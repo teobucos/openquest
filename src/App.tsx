@@ -9,7 +9,7 @@ import {
   submitContribution
 } from "./api";
 import {
-  reviewContributionInputSchema,
+  ReviewContributionInputSchema,
   type ContributionResponse,
   type Mission,
   type MissionResponse,
@@ -18,6 +18,7 @@ import {
 import { useWebMCPTools, type WebMCPToolsState } from "./useWebMCPTools";
 
 type NeedWithContribution = MissionResponse["needs"][number];
+type RemoteDataState<T> = { data: T | null; error: string | null };
 
 function readableError(cause: unknown): string {
   if (cause instanceof ApiError) return cause.message;
@@ -30,6 +31,31 @@ function relativeTime(value: string): string {
   return new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(minutes, "minute");
 }
 
+function useRemoteData<T>(request: () => Promise<T>, refreshMs?: number) {
+  const [{ data, error }, setState] = useState<RemoteDataState<T>>({ data: null, error: null });
+  const reload = useCallback(async () => {
+    try {
+      setState({ data: await request(), error: null });
+    } catch (cause: unknown) {
+      setState((state) => ({ ...state, error: readableError(cause) }));
+    }
+  }, [request]);
+
+  useEffect(() => {
+    void reload();
+    if (!refreshMs) return;
+    const refresh = () => void reload();
+    const timer = window.setInterval(refresh, refreshMs);
+    window.addEventListener("openshare:changed", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("openshare:changed", refresh);
+    };
+  }, [refreshMs, reload]);
+
+  return { data, error, reload };
+}
+
 function ToolStatus(props: { state: WebMCPToolsState }) {
   const label = props.state.error
     ? "Tool registration needs attention"
@@ -39,7 +65,7 @@ function ToolStatus(props: { state: WebMCPToolsState }) {
         ? "Registering Site Tools"
         : "Human mode · WebMCP ready browser required";
   return (
-    <div className={"tool-status " + (props.state.registered ? "is-ready" : "")}>
+    <div className={"tool-status " + (props.state.registered ? "is-ready" : "")} role="status">
       <span className="status-dot" />{label}
     </div>
   );
@@ -63,7 +89,7 @@ function Loading() {
 }
 
 function ErrorPanel(props: { message: string; retry: () => void }) {
-  return <div className="error-panel"><p>{props.message}</p><button type="button" onClick={props.retry}>Try again</button></div>;
+  return <div className="error-panel" role="alert"><p>{props.message}</p><button type="button" onClick={props.retry}>Try again</button></div>;
 }
 
 function Metric(props: { label: string; value: number; tone: string }) {
@@ -71,29 +97,9 @@ function Metric(props: { label: string; value: number; tone: string }) {
 }
 
 function HomePage() {
-  const [world, setWorld] = useState<WorldResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    try {
-      setWorld(await getWorld());
-      setError(null);
-    } catch (cause: unknown) {
-      setError(readableError(cause));
-    }
-  }, []);
+  const { data: world, error, reload } = useRemoteData<WorldResponse>(getWorld, 1_500);
 
-  useEffect(() => {
-    const refresh = () => void load();
-    refresh();
-    const timer = window.setInterval(refresh, 1_500);
-    window.addEventListener("openshare:changed", refresh);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("openshare:changed", refresh);
-    };
-  }, [load]);
-
-  if (error && !world) return <ErrorPanel message={error} retry={() => void load()} />;
+  if (error && !world) return <ErrorPanel message={error} retry={reload} />;
   if (!world) return <Loading />;
   const firstMission = world.missions[0]?.slug ?? "webmcp-open-knowledge";
   return (
@@ -134,7 +140,7 @@ function HomePage() {
   );
 }
 
-function ContributionComposer(props: { need: NeedWithContribution; completed: () => void }) {
+function ContributionComposer({ need, completed }: { need: NeedWithContribution; completed: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -143,14 +149,14 @@ function ContributionComposer(props: { need: NeedWithContribution; completed: ()
     const evidenceUrl = String(data.get("evidence") ?? "").trim();
     try {
       await submitContribution({
-        need_id: props.need.id,
+        need_id: need.id,
         summary: String(data.get("summary") ?? ""),
         result: { answer: String(data.get("answer") ?? "") },
         evidence: evidenceUrl ? [{ url: evidenceUrl, title: "Supporting source" }] : []
       });
       setExpanded(false);
       setError(null);
-      props.completed();
+      completed();
     } catch (cause: unknown) {
       setError(readableError(cause));
     }
@@ -161,51 +167,50 @@ function ContributionComposer(props: { need: NeedWithContribution; completed: ()
       <label>Summary<input name="summary" required maxLength={800} /></label>
       <label>Result<textarea name="answer" required maxLength={6000} rows={4} /></label>
       <label>Evidence URL<input name="evidence" type="url" /></label>
-      {error && <p className="form-error">{error}</p>}
+      {error && <p className="form-error" role="alert">{error}</p>}
       <div className="form-actions"><button type="submit">Submit contribution</button><button className="quiet-button" type="button" onClick={() => setExpanded(false)}>Cancel</button></div>
     </form>
   );
 }
 
-function ReviewComposer(props: { need: NeedWithContribution; completed: () => void }) {
+function ReviewComposer({ need, completed }: { need: NeedWithContribution; completed: () => void }) {
   const [error, setError] = useState<string | null>(null);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!props.need.contribution) return;
+    if (!need.contribution) return;
     const data = new FormData(event.currentTarget);
     try {
-      const input = reviewContributionInputSchema.parse({
-        contribution_id: props.need.contribution.id,
+      const input = ReviewContributionInputSchema.parse({
+        contribution_id: need.contribution.id,
         verdict: data.get("verdict"),
         reason: data.get("reason")
       });
       await reviewContribution(input);
       setError(null);
-      props.completed();
+      completed();
     } catch (cause: unknown) {
       setError(readableError(cause));
     }
   }
-  if (!props.need.contribution) return null;
+  if (!need.contribution) return null;
   return (
     <form className="review-form" onSubmit={submit}>
       <select name="verdict" aria-label="Review verdict"><option value="support">Support</option><option value="needs_work">Needs work</option><option value="challenge">Challenge</option></select>
       <input name="reason" required maxLength={1000} placeholder="Why does the evidence support your verdict?" />
-      <button type="submit">Record review</button>{error && <p className="form-error">{error}</p>}
+      <button type="submit">Record review</button>{error && <p className="form-error" role="alert">{error}</p>}
     </form>
   );
 }
 
-function NeedCard(props: { need: NeedWithContribution; reload: () => void }) {
-  const need = props.need;
+function NeedCard({ need, reload }: { need: NeedWithContribution; reload: () => void }) {
   return (
     <article className={"need-card status-" + need.status}>
       <div className="need-meta"><span>{need.kind}</span><span>P{need.priority}</span></div>
       <h3>{need.title}</h3><p>{need.instructions}</p>
       {need.acceptance_criteria.length > 0 && <ul>{need.acceptance_criteria.map((criterion) => <li key={criterion}>{criterion}</li>)}</ul>}
       {need.contribution && <a className="contribution-preview" href={"/contributions/" + need.contribution.id}><span>CONTRIBUTION · {need.contribution.actor_label}</span><strong>{need.contribution.summary}</strong></a>}
-      {need.status === "open" && <ContributionComposer need={need} completed={props.reload} />}
-      {need.status === "awaiting_review" && <ReviewComposer need={need} completed={props.reload} />}
+      {need.status === "open" && <ContributionComposer need={need} completed={reload} />}
+      {need.status === "awaiting_review" && <ReviewComposer need={need} completed={reload} />}
       {need.status === "resolved" && <div className="resolved-stamp">CROSS-SESSION REVIEW COMPLETE</div>}
     </article>
   );
@@ -219,17 +224,17 @@ function NeedColumn(props: { title: string; marker: string; needs: NeedWithContr
   );
 }
 
-function ProposeForm(props: { mission: Mission; completed: () => void }) {
+function ProposeForm({ mission, completed }: { mission: Mission; completed: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     try {
-      await proposeNeed({ mission_id: props.mission.id, title: String(data.get("title") ?? ""), instructions: String(data.get("instructions") ?? ""), rationale: String(data.get("rationale") ?? "") });
+      await proposeNeed({ mission_id: mission.id, title: String(data.get("title") ?? ""), instructions: String(data.get("instructions") ?? ""), rationale: String(data.get("rationale") ?? "") });
       setExpanded(false);
       setMessage("Need added to the shared frontier.");
-      props.completed();
+      completed();
     } catch (cause: unknown) {
       setMessage(readableError(cause));
     }
@@ -237,46 +242,31 @@ function ProposeForm(props: { mission: Mission; completed: () => void }) {
   return (
     <div className="propose-panel"><button type="button" className="text-button" onClick={() => setExpanded(!expanded)}>{expanded ? "Close proposal" : "+ Propose a new Need"}</button>
       {expanded && <form className="action-form" onSubmit={submit}><label>Title<input name="title" required minLength={3} maxLength={160} /></label><label>Instructions<textarea name="instructions" required minLength={10} maxLength={1200} /></label><label>Why it matters<textarea name="rationale" required minLength={10} maxLength={800} /></label><button type="submit">Expand the frontier</button></form>}
-      {message && <p className="form-note">{message}</p>}
+      {message && <p className="form-note" role="status">{message}</p>}
     </div>
   );
 }
 
-function MissionPage(props: { slug: string }) {
-  const [data, setData] = useState<MissionResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    try { setData(await getMission(props.slug)); setError(null); }
-    catch (cause: unknown) { setError(readableError(cause)); }
-  }, [props.slug]);
-  useEffect(() => {
-    const refresh = () => void load(); refresh();
-    const timer = window.setInterval(refresh, 1_250);
-    window.addEventListener("openshare:changed", refresh);
-    return () => { window.clearInterval(timer); window.removeEventListener("openshare:changed", refresh); };
-  }, [load]);
-  if (error && !data) return <ErrorPanel message={error} retry={() => void load()} />;
+function MissionPage({ slug }: { slug: string }) {
+  const request = useCallback(() => getMission(slug), [slug]);
+  const { data, error, reload } = useRemoteData<MissionResponse>(request, 1_250);
+  if (error && !data) return <ErrorPanel message={error} retry={reload} />;
   if (!data) return <Loading />;
   const open = data.needs.filter((need) => need.status === "open");
   const reviewing = data.needs.filter((need) => need.status === "awaiting_review");
   const resolved = data.needs.filter((need) => need.status === "resolved");
   return (
     <main><section className="mission-hero"><a href="/" className="back-link">← All missions</a><span className="eyebrow">{data.mission.type.toUpperCase()} MISSION</span><h1>{data.mission.title}</h1><p>{data.mission.goal}</p><div className="mini-metrics"><span><strong>{data.counts.open}</strong> Needs help</span><span><strong>{data.counts.awaiting_review}</strong> Needs review</span><span><strong>{data.counts.resolved}</strong> Resolved</span></div></section>
-      <div className="frontier-board"><NeedColumn title="Needs help" marker="○" needs={open} reload={() => void load()} /><NeedColumn title="Needs review" marker="?" needs={reviewing} reload={() => void load()} /><NeedColumn title="Resolved" marker="✓" needs={resolved} reload={() => void load()} /></div>
-      <ProposeForm mission={data.mission} completed={() => void load()} />
+      <div className="frontier-board"><NeedColumn title="Needs help" marker="○" needs={open} reload={reload} /><NeedColumn title="Needs review" marker="?" needs={reviewing} reload={reload} /><NeedColumn title="Resolved" marker="✓" needs={resolved} reload={reload} /></div>
+      <ProposeForm mission={data.mission} completed={reload} />
     </main>
   );
 }
 
-function ContributionPage(props: { id: string }) {
-  const [data, setData] = useState<ContributionResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    try { setData(await getContribution(props.id)); setError(null); }
-    catch (cause: unknown) { setError(readableError(cause)); }
-  }, [props.id]);
-  useEffect(() => { void load(); }, [load]);
-  if (error && !data) return <ErrorPanel message={error} retry={() => void load()} />;
+function ContributionPage({ id }: { id: string }) {
+  const request = useCallback(() => getContribution(id), [id]);
+  const { data, error, reload } = useRemoteData<ContributionResponse>(request);
+  if (error && !data) return <ErrorPanel message={error} retry={reload} />;
   if (!data) return <Loading />;
   return (
     <main className="detail-page"><a className="back-link" href={"/m/" + data.mission.slug}>← {data.mission.title}</a><span className="eyebrow">CONTRIBUTION</span><h1>{data.need.title}</h1><div className="detail-grid"><article className="detail-card"><span className="detail-label">PROPOSAL</span><h2>{data.contribution.summary}</h2><p>{data.contribution.result.answer}</p>{data.contribution.evidence.map((item) => <a href={item.url} key={item.url} rel="noreferrer" target="_blank">{item.title} ↗</a>)}</article><aside className="provenance-card"><span className="detail-label">PROVENANCE</span><strong>{data.contribution.actor_label}</strong><span>{relativeTime(data.contribution.created_at)}</span><span className="state-pill">{data.need.status.replace("_", " ")}</span>{data.reviews.map((review) => <div className="review-record" key={review.id}><b>{review.verdict}</b><p>{review.reason}</p><small>{review.reviewer_label}</small></div>)}</aside></div></main>
