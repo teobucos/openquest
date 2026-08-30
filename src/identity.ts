@@ -1,6 +1,5 @@
 export interface ActorIdentity {
   id: string;
-  label: string;
 }
 
 export interface EnsuredIdentity {
@@ -45,7 +44,7 @@ function sessionSetCookie(token: string, request: Request): string {
 }
 
 export function publicActorLabel(sessionId: string): string {
-  return `Agent ${sessionId.replaceAll("-", "").slice(-6).toUpperCase()}`;
+  return `Agent ${sessionId.replaceAll("-", "").slice(-8).toUpperCase()}`;
 }
 
 export async function readIdentity(request: Request, db: D1Database): Promise<ActorIdentity | null> {
@@ -55,16 +54,13 @@ export async function readIdentity(request: Request, db: D1Database): Promise<Ac
   const session = await db.prepare("SELECT id FROM sessions WHERE token_hash = ?")
     .bind(tokenHash)
     .first<IdRow>();
-  return session ? { id: session.id, label: publicActorLabel(session.id) } : null;
+  return session ? { id: session.id } : null;
 }
 
 export async function ensureIdentity(request: Request, db: D1Database): Promise<EnsuredIdentity> {
   const existing = await readIdentity(request, db);
   const now = new Date().toISOString();
   if (existing) {
-    await db.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?")
-      .bind(now, existing.id)
-      .run();
     return { actor: existing, setCookie: null };
   }
 
@@ -72,40 +68,34 @@ export async function ensureIdentity(request: Request, db: D1Database): Promise<
   const token = crypto.randomUUID();
   const tokenHash = await hashText(`openquest-session:${token}`);
   await db.prepare(
-    "INSERT INTO sessions (id, token_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?)",
-  ).bind(id, tokenHash, now, now).run();
+    "INSERT INTO sessions (id, token_hash, created_at) VALUES (?, ?, ?)",
+  ).bind(id, tokenHash, now).run();
   return {
-    actor: { id, label: publicActorLabel(id) },
+    actor: { id },
     setCookie: sessionSetCookie(token, request),
   };
 }
 
-async function hashAddress(request: Request): Promise<string> {
+export async function addressRateLimitKey(request: Request): Promise<string> {
   const address = request.headers.get("cf-connecting-ip") ?? "local";
-  return (await hashText(`openquest-address:${address}`)).slice(0, 24);
+  const addressHash = (await hashText(`openquest-address:${address}`)).slice(0, 24);
+  return `ip:${addressHash}`;
 }
 
-export async function enforceWriteLimit(
-  request: Request,
+export function actorRateLimitKey(actor: ActorIdentity): string {
+  return `session:${actor.id}`;
+}
+
+export async function consumeRateLimit(
   db: D1Database,
-  actor: ActorIdentity,
+  bucketKey: string,
 ): Promise<boolean> {
   const window = Math.floor(Date.now() / 60_000);
-  const ipHash = await hashAddress(request);
-  const sessionKey = `session:${actor.id}`;
-  const addressKey = `ip:${ipHash}`;
-  const statement = db.prepare(
+  const usage = await db.prepare(
     "INSERT INTO rate_limits (bucket_key, window, request_count) VALUES (?, ?, 1) "
       + "ON CONFLICT(bucket_key) DO UPDATE SET request_count = CASE "
       + "WHEN rate_limits.window = excluded.window THEN rate_limits.request_count + 1 ELSE 1 END, "
-      + "window = excluded.window",
-  );
-  await db.batch([
-    statement.bind(sessionKey, window),
-    statement.bind(addressKey, window),
-  ]);
-  const usage = await db.prepare(
-    "SELECT MAX(request_count) AS count FROM rate_limits WHERE bucket_key IN (?, ?)",
-  ).bind(sessionKey, addressKey).first<CountRow>();
+      + "window = excluded.window RETURNING request_count AS count",
+  ).bind(bucketKey, window).first<CountRow>();
   return (usage?.count ?? 0) <= 30;
 }

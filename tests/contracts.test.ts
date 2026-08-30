@@ -2,11 +2,13 @@ import { describe, expect, it } from "bun:test";
 import {
   ApiErrorResponseSchema,
   ContributionPreviewSchema,
+  ContributionResponseSchema,
   CreateChallengeInputSchema,
   CreateQuestInputSchema,
   EventSchema,
   GetNextWorkInputSchema,
   ObserveInputSchema,
+  ObserveResponseSchema,
   ProposeInputSchema,
   ReviewContributionInputSchema,
   SubmitContributionInputSchema,
@@ -173,6 +175,73 @@ describe("OpenQuest public contracts", () => {
     ).toBe(true);
   });
 
+  it("keeps observe compact and Contribution Review singular", () => {
+    const timestamp = "2026-08-30T12:00:00.000Z";
+    const quest = {
+      id: "quest_research",
+      slug: "open-research",
+      title: "Open Research Quest",
+      goal: "Build a source-backed map of an open research question.",
+      description: "",
+      status: "active" as const,
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
+    const challenge = {
+      id: "challenge_1",
+      quest_id: quest.id,
+      title: "Cross-check one published claim",
+      description: "Compare the claim directly with a primary public source.",
+      status: "awaiting_review" as const,
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
+
+    const unscopedObservation = ObserveResponseSchema.parse({
+      quests: [{ ...quest, counts: { open: 0, awaiting_review: 1, resolved: 0 }, active_agents: 1 }],
+      totals: { open: 0, awaiting_review: 1, resolved: 0 },
+      active_agents: 1,
+      activity: [],
+    });
+    expect(unscopedObservation).not.toHaveProperty("challenges");
+
+    const scopedObservation = ObserveResponseSchema.parse({
+      quests: [{ ...quest, counts: { open: 0, awaiting_review: 1, resolved: 0 }, active_agents: 1 }],
+      totals: { open: 0, awaiting_review: 1, resolved: 0 },
+      active_agents: 1,
+      challenges: [],
+      activity: [],
+    });
+    expect(scopedObservation.challenges).toEqual([]);
+    expect(
+      ObserveResponseSchema.safeParse({
+        quests: [],
+        totals: { open: 0, awaiting_review: 0, resolved: 0 },
+        active_agents: 0,
+        activity: [],
+        suggested_next: "Call openquest_next.",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      ContributionResponseSchema.safeParse({
+        contribution: {
+          id: "contribution_1",
+          challenge_id: challenge.id,
+          actor_label: "Agent ABC123",
+          summary: "A concise public result",
+          content: "The complete public Contribution.",
+          evidence: [],
+          status: "pending",
+          created_at: timestamp,
+        },
+        challenge,
+        quest: { id: quest.id, slug: quest.slug, title: quest.title },
+        review: null,
+      }).success,
+    ).toBe(true);
+  });
+
   it("publishes exactly five canonical WebMCP input schemas", () => {
     expect(Object.keys(WebMCPToolInputJsonSchemas).sort()).toEqual([
       "openquest_next",
@@ -186,5 +255,39 @@ describe("OpenQuest public contracts", () => {
     expect(WebMCPToolInputJsonSchemas.openquest_observe.required ?? []).not.toContain("limit");
     expect(WebMCPToolInputJsonSchemas.openquest_submit.required ?? []).not.toContain("evidence");
     expect(WebMCPToolInputJsonSchemas.openquest_review.required ?? []).not.toContain("evidence");
+    expect(WebMCPToolInputJsonSchemas.openquest_submit.properties?.content).toMatchObject({
+      minLength: 1,
+      maxLength: 12_000,
+    });
+    expect(WebMCPToolInputJsonSchemas.openquest_observe.properties?.limit).toMatchObject({
+      description: "Maximum active Quests and recent activity entries to return. Scoped Challenge previews use a separate fixed 100-item bound.",
+    });
+    expect(WebMCPToolInputJsonSchemas.openquest_observe.properties?.quest_id).toMatchObject({
+      description: "Canonical Quest ID returned by OpenQuest. Do not use the human-readable URL slug.",
+    });
+    expect(WebMCPToolInputJsonSchemas.openquest_submit.properties?.challenge_id).toMatchObject({
+      description: "Canonical Challenge ID returned by OpenQuest.",
+    });
+    expect(WebMCPToolInputJsonSchemas.openquest_review.properties?.contribution_id).toMatchObject({
+      description: "Canonical Contribution ID returned by OpenQuest.",
+    });
+    expect(() => JSON.stringify(WebMCPToolInputJsonSchemas)).not.toThrow();
+    expect([
+      WebMCPToolInputJsonSchemas.openquest_observe,
+      WebMCPToolInputJsonSchemas.openquest_next,
+      WebMCPToolInputJsonSchemas.openquest_submit,
+      WebMCPToolInputJsonSchemas.openquest_review,
+    ].every((schema) => schema.additionalProperties === false)).toBe(true);
+    const proposalVariants = WebMCPToolInputJsonSchemas.openquest_propose.oneOf ?? [];
+    expect(proposalVariants).toHaveLength(2);
+    const serializedVariants = proposalVariants.map((variant) => JSON.stringify(variant));
+    expect(serializedVariants.some((variant) => variant.includes('"const":"challenge"'))).toBe(true);
+    expect(serializedVariants.some((variant) => variant.includes('"const":"quest"'))).toBe(true);
+    expect(serializedVariants.every((variant) => variant.includes('"additionalProperties":false')))
+      .toBe(true);
+    const questVariant = serializedVariants.find((variant) => variant.includes('"const":"quest"'));
+    expect(questVariant).toContain('"required":["kind","title","goal"]');
+    expect(ApiErrorResponseSchema.safeParse({ status: "conflict", message: "Unused." }).success)
+      .toBe(false);
   });
 });

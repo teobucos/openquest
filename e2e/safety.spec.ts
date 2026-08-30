@@ -10,12 +10,33 @@ import {
 } from "../src/contracts";
 import {
   challengeRow,
-  failedTool,
+  domainErrorTool,
   installFakeWebMcp,
   successfulTool,
 } from "./helpers";
 
-test("OpenQuest keeps public reads inert and maps invalid tool input to rejected executions", async ({ browser, request }) => {
+test("home explains unsupported WebMCP and an empty active Quest list", async ({ page }) => {
+  await page.route("**/api/world*", (route) => route.fulfill({
+    body: JSON.stringify({
+      active_agents: 0,
+      activity: [],
+      quests: [],
+      totals: { awaiting_review: 0, open: 0, resolved: 0 },
+    }),
+    contentType: "application/json",
+    status: 200,
+  }));
+
+  await page.goto("/");
+  await expect(page.getByText("WebMCP · browser unsupported", { exact: true })).toBeVisible();
+  const emptyQuestCopy = page.locator(".quest-grid .empty-copy");
+  await expect(emptyQuestCopy).toBeVisible();
+  expect(await emptyQuestCopy.innerText()).toBe(
+    "No active Quests yet.\nCreate the first Quest below.",
+  );
+});
+
+test("OpenQuest keeps public reads inert and returns invalid tool input as structured results", async ({ browser, request }) => {
   const publicRead = await request.get("/api/world");
   expect(publicRead.status()).toBe(200);
   expect(publicRead.headers()["set-cookie"]).toBeUndefined();
@@ -23,6 +44,27 @@ test("OpenQuest keeps public reads inert and maps invalid tool input to rejected
   const readOnlySelection = await request.post("/api/work/next", { data: {} });
   expect(readOnlySelection.status()).toBe(200);
   expect(readOnlySelection.headers()["set-cookie"]).toBeUndefined();
+
+  const malformedBody = await request.post("/api/work/next", {
+    data: Buffer.from("{ malformed JSON"),
+    headers: { "content-type": "application/json" },
+  });
+  expect(malformedBody.status()).toBe(400);
+  const malformedPayload = ApiErrorResponseSchema.parse(await malformedBody.json());
+  expect(malformedPayload.status).toBe("invalid_input");
+  expect(malformedPayload.message).toBe("Request body must be valid JSON.");
+
+  const inactiveQuestChallenge = await request.post("/api/challenges", {
+    data: {
+      description: "The D1 trigger must reject a Challenge whose Quest does not exist.",
+      quest_id: "quest_missing_for_trigger_test",
+      title: "Database-owned active Quest invariant",
+    },
+    headers: { "cf-connecting-ip": `e2e-trigger-${crypto.randomUUID()}` },
+  });
+  expect(inactiveQuestChallenge.status()).toBe(409);
+  const inactiveQuestPayload = ApiErrorResponseSchema.parse(await inactiveQuestChallenge.json());
+  expect(inactiveQuestPayload.status).toBe("quest_unavailable");
 
   const secureWrite = await request.post("/api/quests", {
     data: {
@@ -67,10 +109,10 @@ test("OpenQuest keeps public reads inert and maps invalid tool input to rejected
     await page.goto("/q/accessible-hcmc");
     await expect(challengeRow(page, title)).toBeVisible();
     await expect(page.locator("article.challenge-row script")).toHaveCount(0);
-    await expect(page.getByText("5 Site Tools ready", { exact: true })).toBeVisible();
+    await expect(page.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
 
     for (const url of ["javascript:alert(1)", "data:text/plain,unsafe", "file:///tmp/unsafe"]) {
-      const error = await failedTool(page, {
+      const error = await domainErrorTool(page, {
         name: "openquest_submit",
         input: {
           challenge_id: scriptedChallenge.challenge_id,
@@ -78,19 +120,19 @@ test("OpenQuest keeps public reads inert and maps invalid tool input to rejected
           evidence: [{ title: "Unsafe URL", url }],
           summary: "Unsafe evidence must be rejected.",
         },
-      });
-      expect(error).toContain("[invalid_input]");
+      }, "invalid_input");
+      expect(error.status).toBe("invalid_input");
     }
 
-    const whitespaceError = await failedTool(page, {
+    const whitespaceError = await domainErrorTool(page, {
       name: "openquest_submit",
       input: {
         challenge_id: scriptedChallenge.challenge_id,
         content: "   \n\t",
         summary: "Whitespace-only content must be rejected.",
       },
-    });
-    expect(whitespaceError).toContain("[invalid_input]");
+    }, "invalid_input");
+    expect(whitespaceError.status).toBe("invalid_input");
 
     const invalidWorkerResponse = await page.request.post("/api/contributions", {
       data: {
@@ -252,12 +294,15 @@ test("Quest previews stay bounded and omit full Contribution work", async ({ bro
       CreateQuestResponseSchema,
     );
 
+    writerContexts.push(...await Promise.all(
+      Array.from({ length: 10 }, (_, index) => browser.newContext({
+        extraHTTPHeaders: { "cf-connecting-ip": `e2e-bounds-${index}-${crypto.randomUUID()}` },
+      })),
+    ));
+
     let firstContributionId: string | null = null;
     for (let index = 0; index < 101; index += 1) {
-      const writer = await browser.newContext({
-        extraHTTPHeaders: { "cf-connecting-ip": `e2e-bounds-${index}-${crypto.randomUUID()}` },
-      });
-      writerContexts.push(writer);
+      const writer = writerContexts[index % writerContexts.length];
       const challengeResponse = await writer.request.post("/api/challenges", {
         data: {
           description: `Create compact preview fixture ${index} without changing the public data-model rules.`,
