@@ -4,7 +4,7 @@ import App from "./App";
 import "./styles.css";
 
 const root = document.getElementById("root");
-if (!root) throw new Error("OpenShare root element is missing.");
+if (!root) throw new Error("OpenQuest root element is missing.");
 
 createRoot(root).render(
   <StrictMode>

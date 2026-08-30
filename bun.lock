@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "openshare",
+      "name": "openquest",
       "dependencies": {
         "@cloudflare/vite-plugin": "^1.8.1",
         "@vitejs/plugin-react": "^4.4.1",

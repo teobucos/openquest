@@ -1,5 +1,5 @@
 {
-  "name": "openshare",
+  "name": "openquest",
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
@@ -12,15 +12,15 @@
     "dev": "bun run --bun vite --configLoader native",
     "build": "bun run --bun tsc --noEmit && bun run --bun vite build --configLoader native",
     "preview": "bun run --bun vite preview --configLoader native --host 127.0.0.1 --port 4173 --strictPort",
-    "serve": "bun run migrate:serve && OPENSHARE_PERSIST_PATH=.runtime/state bun run preview",
+    "serve": "bun run migrate:serve && OPENQUEST_PERSIST_PATH=.runtime/state bun run preview",
     "deploy": "bun run build && bun run --bun wrangler deploy",
     "test": "bun test tests/contracts.test.ts",
     "test:watch": "bun test --watch tests/contracts.test.ts",
     "e2e": "bun run --bun playwright test",
     "e2e:ui": "bun run --bun playwright test --ui",
-    "migrate:local": "bun run --bun wrangler d1 migrations apply openshare --local",
-    "migrate:serve": "bun run --bun wrangler d1 migrations apply openshare --local --persist-to .runtime/state",
-    "migrate:remote": "bun run --bun wrangler d1 migrations apply openshare --remote"
+    "migrate:local": "bun run --bun wrangler d1 migrations apply openquest --local",
+    "migrate:serve": "bun run --bun wrangler d1 migrations apply openquest --local --persist-to .runtime/state",
+    "migrate:remote": "bun run --bun wrangler d1 migrations apply openquest --remote"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.8.1",

@@ -1,27 +1,17 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import {
-  ApiError,
-  getContribution,
-  getMission,
-  getWorld,
-  proposeNeed,
-  reviewContribution,
-  submitContribution
-} from "./api";
-import {
-  ReviewContributionInputSchema,
-  type ContributionResponse,
-  type Mission,
-  type MissionResponse,
-  type WorldResponse
+import { ApiError, createQuest, getContribution, getQuest, getWorld } from "./api";
+import type {
+  ContributionResponse,
+  QuestResponse,
+  WorldResponse,
 } from "./contracts";
 import { useWebMCPTools, type WebMCPToolsState } from "./useWebMCPTools";
 
-type NeedWithContribution = MissionResponse["needs"][number];
-type RemoteDataState<T> = { data: T | null; error: string | null };
+type RemoteDataState<Value> = { data: Value | null; error: string | null };
 type ThemePreference = "system" | "light" | "dark";
+type PublicEvent = WorldResponse["activity"][number];
 
-const themeStorageKey = "openshare-theme";
+const themeStorageKey = "openquest-theme";
 
 function storedThemePreference(): ThemePreference {
   try {
@@ -33,16 +23,12 @@ function storedThemePreference(): ThemePreference {
 }
 
 function applyThemePreference(preference: ThemePreference): void {
-  if (preference === "system") {
-    document.documentElement.removeAttribute("data-theme");
-  } else {
-    document.documentElement.dataset.theme = preference;
-  }
+  if (preference === "system") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.dataset.theme = preference;
 }
 
 function ThemeControl() {
   const [preference, setPreference] = useState<ThemePreference>(storedThemePreference);
-
   useEffect(() => applyThemePreference(preference), [preference]);
 
   function changePreference(value: string): void {
@@ -52,7 +38,7 @@ function ThemeControl() {
       if (next === "system") window.localStorage.removeItem(themeStorageKey);
       else window.localStorage.setItem(themeStorageKey, next);
     } catch {
-      // The visual preference still applies when storage is unavailable.
+      // The preference still applies when storage is unavailable.
     }
   }
 
@@ -73,23 +59,21 @@ function ThemeControl() {
 }
 
 function readableError(cause: unknown): string {
-  if (cause instanceof ApiError) return cause.message;
+  if (cause instanceof ApiError) return cause.payload.message;
   if (cause instanceof Error) return cause.message;
-  return "OpenShare could not complete that action.";
+  return "OpenQuest could not complete that action.";
 }
 
-function relativeTime(value: string): string {
-  const minutes = Math.max(-60, Math.round((Date.parse(value) - Date.now()) / 60_000));
-  return new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(minutes, "minute");
-}
-
-function useRemoteData<T>(request: () => Promise<T>, refreshMs?: number) {
-  const [{ data, error }, setState] = useState<RemoteDataState<T>>({ data: null, error: null });
+function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: number) {
+  const [{ data, error }, setState] = useState<RemoteDataState<Value>>({
+    data: null,
+    error: null,
+  });
   const reload = useCallback(async () => {
     try {
       setState({ data: await request(), error: null });
     } catch (cause: unknown) {
-      setState((state) => ({ ...state, error: readableError(cause) }));
+      setState((current) => ({ ...current, error: readableError(cause) }));
     }
   }, [request]);
 
@@ -98,220 +82,270 @@ function useRemoteData<T>(request: () => Promise<T>, refreshMs?: number) {
     if (!refreshMs) return;
     const refresh = () => void reload();
     const timer = window.setInterval(refresh, refreshMs);
-    window.addEventListener("openshare:changed", refresh);
+    window.addEventListener("openquest:changed", refresh);
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener("openshare:changed", refresh);
+      window.removeEventListener("openquest:changed", refresh);
     };
   }, [refreshMs, reload]);
-
   return { data, error, reload };
 }
 
-function ToolStatus(props: { state: WebMCPToolsState }) {
-  const label = props.state.error
-    ? "Tool registration needs attention"
-    : props.state.registered
+function ToolStatus({ tools }: { tools: WebMCPToolsState }) {
+  const message = tools.error
+    ? "Site Tools registration failed"
+    : tools.registered
       ? "5 Site Tools ready"
-      : props.state.supported
-        ? "Registering Site Tools"
-        : "Human mode · WebMCP ready browser required";
+      : tools.supported
+        ? "Registering 5 Site Tools"
+        : "Site Tools unavailable";
   return (
-    <div className={"tool-status " + (props.state.registered ? "is-ready" : "")} role="status">
-      <span className="status-dot" />{label}
-    </div>
+    <span className={`tool-status${tools.registered ? " is-ready" : ""}`} title={tools.error ?? message}>
+      <span className="status-dot" />
+      {message}
+    </span>
   );
 }
 
-function Shell(props: { children: ReactNode; tools: WebMCPToolsState }) {
+function Shell({ children, tools }: { children: ReactNode; tools: WebMCPToolsState }) {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <a className="brand" href="/"><span className="brand-mark">OS</span><span>OPENSHARE</span></a>
-        <div className="header-actions"><ToolStatus state={props.tools} /><ThemeControl /></div>
+        <a className="brand" href="/" aria-label="OpenQuest home">
+          <span className="brand-mark">OQ</span>
+          OPENQUEST
+        </a>
+        <div className="header-actions">
+          <ThemeControl />
+          <ToolStatus tools={tools} />
+        </div>
       </header>
-      {props.children}
-      <footer><span>One shared frontier. Many independent visits.</span><span>Mission → Need → Contribution → Review</span></footer>
+      {children}
+      <footer>
+        <span>Quest → Challenge → Contribution → Review → Resolved</span>
+        <span>All v1 work is public</span>
+      </footer>
     </div>
   );
 }
 
 function Loading() {
-  return <div className="loading">Synchronizing the shared frontier…</div>;
+  return <main className="loading">Loading public state…</main>;
 }
 
-function ErrorPanel(props: { message: string; retry: () => void }) {
-  return <div className="error-panel" role="alert"><p>{props.message}</p><button type="button" onClick={props.retry}>Try again</button></div>;
-}
-
-function Metric(props: { label: string; value: number; tone: string }) {
-  return <div className={"metric " + props.tone}><strong>{props.value}</strong><span>{props.label}</span></div>;
-}
-
-function HomePage() {
-  const { data: world, error, reload } = useRemoteData<WorldResponse>(getWorld, 1_500);
-
-  if (error && !world) return <ErrorPanel message={error} retry={reload} />;
-  if (!world) return <Loading />;
-  const firstMission = world.missions[0]?.slug ?? "webmcp-open-knowledge";
+function ErrorPanel({ message, retry }: { message: string; retry: () => void }) {
   return (
-    <main>
-      <section className="hero">
-        <span className="eyebrow">A PUBLIC WORLD FOR HUMAN + AGENT COLLABORATION</span>
-        <h1>Send your agent.<br /><em>Move the frontier.</em></h1>
-        <p>Choose what matters. Your agent finds useful work, contributes evidence, and another browser session reviews it. Every resolved Need becomes shared progress.</p>
-        <a className="primary-link" href={"/m/" + firstMission}>Explore the frontier <span>↗</span></a>
-      </section>
-      <section className="metrics" aria-label="World status">
-        <Metric value={world.totals.open} label="Needs help" tone="open" />
-        <Metric value={world.totals.awaiting_review} label="Needs review" tone="review" />
-        <Metric value={world.totals.resolved} label="Resolved" tone="resolved" />
-      </section>
-      <section className="section-block">
-        <div className="section-heading"><div><span className="eyebrow">ACTIVE MISSIONS</span><h2>Where progress is needed</h2></div><span className="section-count">{String(world.missions.length).padStart(2, "0")}</span></div>
-        <div className="mission-grid">
-          {world.missions.map((mission, index) => (
-            <a className="mission-card" href={"/m/" + mission.slug} key={mission.id}>
-              <div className="card-topline"><span>{String(index + 1).padStart(2, "0")} · {mission.type.toUpperCase()}</span><span>{mission.progress}%</span></div>
-              <h3>{mission.title}</h3><p>{mission.goal}</p>
-              <div className="progress-track"><span style={{ width: String(mission.progress) + "%" }} /></div>
-              <div className="card-counts"><span>{mission.counts.open} open</span><span>{mission.counts.awaiting_review} reviewing</span><span>{mission.counts.resolved} resolved</span></div>
-            </a>
-          ))}
-        </div>
-      </section>
-      <section className="section-block">
-        <div className="section-heading"><div><span className="eyebrow">APPEND-ONLY ACTIVITY</span><h2>Live from the commons</h2></div><span className="live-pulse">LIVE</span></div>
-        <div className="activity-list">
-          {world.activity.length === 0 ? <p className="empty-copy">The first contribution is waiting to happen.</p> : world.activity.slice(0, 8).map((event) => (
-            <div className="activity-row" key={event.sequence}><span className="activity-icon">{event.event_type === "review.supported" ? "✓" : "→"}</span><div><strong>{event.summary}</strong><span>{event.actor_label ?? "Seeded frontier"}</span></div><time>{relativeTime(event.created_at)}</time></div>
-          ))}
-        </div>
-      </section>
+    <main className="error-panel">
+      <p>{message}</p>
+      <button type="button" onClick={retry}>Try again</button>
     </main>
   );
 }
 
-function ContributionComposer({ need, completed }: { need: NeedWithContribution; completed: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const evidenceUrl = String(data.get("evidence") ?? "").trim();
-    try {
-      await submitContribution({
-        need_id: need.id,
-        summary: String(data.get("summary") ?? ""),
-        result: { answer: String(data.get("answer") ?? "") },
-        evidence: evidenceUrl ? [{ url: evidenceUrl, title: "Supporting source" }] : []
-      });
-      setExpanded(false);
-      setError(null);
-      completed();
-    } catch (cause: unknown) {
-      setError(readableError(cause));
-    }
-  }
-  if (!expanded) return <button className="text-button" type="button" onClick={() => setExpanded(true)}>Contribute →</button>;
+function ActivityList({ activity }: { activity: PublicEvent[] }) {
   return (
-    <form className="action-form" onSubmit={submit}>
-      <label>Summary<input name="summary" required maxLength={800} /></label>
-      <label>Result<textarea name="answer" required maxLength={6000} rows={4} /></label>
-      <label>Evidence URL<input name="evidence" type="url" /></label>
-      {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="form-actions"><button type="submit">Submit contribution</button><button className="quiet-button" type="button" onClick={() => setExpanded(false)}>Cancel</button></div>
-    </form>
-  );
-}
-
-function ReviewComposer({ need, completed }: { need: NeedWithContribution; completed: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!need.contribution) return;
-    const data = new FormData(event.currentTarget);
-    try {
-      const input = ReviewContributionInputSchema.parse({
-        contribution_id: need.contribution.id,
-        verdict: data.get("verdict"),
-        reason: data.get("reason")
-      });
-      await reviewContribution(input);
-      setError(null);
-      completed();
-    } catch (cause: unknown) {
-      setError(readableError(cause));
-    }
-  }
-  if (!need.contribution) return null;
-  return (
-    <form className="review-form" onSubmit={submit}>
-      <select name="verdict" aria-label="Review verdict"><option value="support">Support</option><option value="needs_work">Needs work</option><option value="challenge">Challenge</option></select>
-      <input name="reason" required maxLength={1000} placeholder="Why does the evidence support your verdict?" />
-      <button type="submit">Record review</button>{error && <p className="form-error" role="alert">{error}</p>}
-    </form>
-  );
-}
-
-function NeedCard({ need, reload }: { need: NeedWithContribution; reload: () => void }) {
-  return (
-    <article className={"need-card status-" + need.status}>
-      <div className="need-meta"><span>{need.kind}</span><span>P{need.priority}</span></div>
-      <h3>{need.title}</h3><p>{need.instructions}</p>
-      {need.acceptance_criteria.length > 0 && <ul>{need.acceptance_criteria.map((criterion) => <li key={criterion}>{criterion}</li>)}</ul>}
-      {need.contribution && <a className="contribution-preview" href={"/contributions/" + need.contribution.id}><span>CONTRIBUTION · {need.contribution.actor_label}</span><strong>{need.contribution.summary}</strong></a>}
-      {need.status === "open" && <ContributionComposer need={need} completed={reload} />}
-      {need.status === "awaiting_review" && <ReviewComposer need={need} completed={reload} />}
-      {need.status === "resolved" && <div className="resolved-stamp">CROSS-SESSION REVIEW COMPLETE</div>}
-    </article>
-  );
-}
-
-function NeedColumn(props: { title: string; marker: string; needs: NeedWithContribution[]; reload: () => void }) {
-  return (
-    <section className="need-column"><div className="column-title"><span>{props.marker}</span><h2>{props.title}</h2><b>{props.needs.length}</b></div><div className="need-list">
-      {props.needs.length === 0 ? <p className="empty-copy">Nothing here right now.</p> : props.needs.map((need) => <NeedCard key={need.id} need={need} reload={props.reload} />)}
-    </div></section>
-  );
-}
-
-function ProposeForm({ mission, completed }: { mission: Mission; completed: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    try {
-      await proposeNeed({ mission_id: mission.id, title: String(data.get("title") ?? ""), instructions: String(data.get("instructions") ?? ""), rationale: String(data.get("rationale") ?? "") });
-      setExpanded(false);
-      setMessage("Need added to the shared frontier.");
-      completed();
-    } catch (cause: unknown) {
-      setMessage(readableError(cause));
-    }
-  }
-  return (
-    <div className="propose-panel"><button type="button" className="text-button" onClick={() => setExpanded(!expanded)}>{expanded ? "Close proposal" : "+ Propose a new Need"}</button>
-      {expanded && <form className="action-form" onSubmit={submit}><label>Title<input name="title" required minLength={3} maxLength={160} /></label><label>Instructions<textarea name="instructions" required minLength={10} maxLength={1200} /></label><label>Why it matters<textarea name="rationale" required minLength={10} maxLength={800} /></label><button type="submit">Expand the frontier</button></form>}
-      {message && <p className="form-note" role="status">{message}</p>}
+    <div className="activity-list" data-testid="activity-list">
+      {activity.length === 0 ? (
+        <p className="empty-copy">No public activity yet.</p>
+      ) : activity.map((event) => (
+        <div className="activity-row" key={event.sequence}>
+          <span className="activity-icon">›</span>
+          <div>
+            <strong>{event.summary}</strong>
+            <span>{event.actor_label ?? "OpenQuest seed"}</span>
+          </div>
+          <time dateTime={event.created_at}>
+            {new Date(event.created_at).toLocaleTimeString([], { hour12: false })}
+          </time>
+        </div>
+      ))}
     </div>
   );
 }
 
-function MissionPage({ slug }: { slug: string }) {
-  const request = useCallback(() => getMission(slug), [slug]);
-  const { data, error, reload } = useRemoteData<MissionResponse>(request, 1_250);
+function CreateQuestForm() {
+  const [message, setMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setMessage(null);
+    const data = new FormData(event.currentTarget);
+    try {
+      const result = await createQuest({
+        title: String(data.get("title") ?? ""),
+        goal: String(data.get("goal") ?? ""),
+        description: String(data.get("description") ?? ""),
+      });
+      window.location.assign(`/q/${encodeURIComponent(result.slug)}`);
+    } catch (cause: unknown) {
+      setMessage(readableError(cause));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="create-panel" id="create-quest" aria-labelledby="create-title">
+      <div>
+        <span className="eyebrow">CREATE A QUEST</span>
+        <h2 id="create-title">Set public direction.</h2>
+        <p>Everything on OpenQuest is public. Do not submit confidential, proprietary, personal, or secret information.</p>
+      </div>
+      <form className="quest-form" onSubmit={submit}>
+        <label>
+          Title
+          <input name="title" required minLength={3} maxLength={160} />
+        </label>
+        <label>
+          Goal
+          <textarea name="goal" required minLength={10} maxLength={2_000} />
+        </label>
+        <label>
+          Description
+          <textarea name="description" maxLength={6_000} />
+        </label>
+        <button type="submit" disabled={submitting}>
+          {submitting ? "Creating…" : "Create Quest"}
+        </button>
+        {message && <p className="form-error" role="alert">{message}</p>}
+      </form>
+    </section>
+  );
+}
+
+function HomePage() {
+  const request = useCallback(() => getWorld(), []);
+  const { data, error, reload } = useRemoteData<WorldResponse>(request, 1_500);
   if (error && !data) return <ErrorPanel message={error} retry={reload} />;
   if (!data) return <Loading />;
-  const open = data.needs.filter((need) => need.status === "open");
-  const reviewing = data.needs.filter((need) => need.status === "awaiting_review");
-  const resolved = data.needs.filter((need) => need.status === "resolved");
   return (
-    <main><section className="mission-hero"><a href="/" className="back-link">← All missions</a><span className="eyebrow">{data.mission.type.toUpperCase()} MISSION</span><h1>{data.mission.title}</h1><p>{data.mission.goal}</p><div className="mini-metrics"><span><strong>{data.counts.open}</strong> Needs help</span><span><strong>{data.counts.awaiting_review}</strong> Needs review</span><span><strong>{data.counts.resolved}</strong> Resolved</span></div></section>
-      <div className="frontier-board"><NeedColumn title="Needs help" marker="○" needs={open} reload={reload} /><NeedColumn title="Needs review" marker="?" needs={reviewing} reload={reload} /><NeedColumn title="Resolved" marker="✓" needs={resolved} reload={reload} /></div>
-      <ProposeForm mission={data.mission} completed={reload} />
+    <main>
+      <section className="hero">
+        <span className="eyebrow">PUBLIC COLLABORATION INFRASTRUCTURE</span>
+        <h1>Set a Quest.<br /><em>Let agents move it forward.</em></h1>
+        <p>
+          OpenQuest is a public workspace for open problems. Humans and agents create
+          Quests. Independent agents discover Challenges, contribute work, and review one another.
+        </p>
+        <a className="primary-link" href="#create-quest">Create a Quest <span>↘</span></a>
+      </section>
+
+      <section className="metrics" aria-label="OpenQuest totals">
+        <div className="metric open"><strong>{data.totals.open}</strong><span>Open</span></div>
+        <div className="metric review"><strong>{data.totals.awaiting_review}</strong><span>Awaiting review</span></div>
+        <div className="metric resolved"><strong>{data.totals.resolved}</strong><span>Resolved</span></div>
+        <div className="metric agents"><strong>{data.active_agents}</strong><span>Active agents</span></div>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <div><span className="eyebrow">ACTIVE QUESTS</span><h2>Public frontiers</h2></div>
+          <span className="section-count">{String(data.quests.length).padStart(2, "0")}</span>
+        </div>
+        <div className="quest-grid">
+          {data.quests.map((quest) => (
+            <a className="quest-card" href={`/q/${quest.slug}`} key={quest.id}>
+              <div className="card-topline"><span>ACTIVE QUEST</span><span>{quest.active_agents} agents active</span></div>
+              <h3>{quest.title}</h3>
+              <p>{quest.goal}</p>
+              <div className="card-counts">
+                <span>{quest.counts.open} open</span>
+                <span>{quest.counts.awaiting_review} review</span>
+                <span>{quest.counts.resolved} resolved</span>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="section-block activity-block">
+        <div className="section-heading">
+          <div><span className="eyebrow">LIVE ACTIVITY</span><h2>Shared public state</h2></div>
+          <span className="live-pulse">POLLING LIVE</span>
+        </div>
+        <ActivityList activity={data.activity} />
+      </section>
+      <CreateQuestForm />
     </main>
+  );
+}
+
+function statusLabel(status: QuestResponse["challenges"][number]["status"]): string {
+  return status === "awaiting_review" ? "Awaiting review" : status[0].toUpperCase() + status.slice(1);
+}
+
+function QuestPage({ slug }: { slug: string }) {
+  const request = useCallback(() => getQuest(slug), [slug]);
+  const { data, error, reload } = useRemoteData<QuestResponse>(request, 1_250);
+  if (error && !data) return <ErrorPanel message={error} retry={reload} />;
+  if (!data) return <Loading />;
+  return (
+    <main>
+      <section className="quest-hero">
+        <a href="/" className="back-link">← All Quests</a>
+        <span className="eyebrow">{data.quest.status.toUpperCase()} QUEST</span>
+        <h1>{data.quest.title}</h1>
+        <div className="quest-copy">
+          <div><span>GOAL</span><p>{data.quest.goal}</p></div>
+          {data.quest.description && <div><span>DESCRIPTION</span><p>{data.quest.description}</p></div>}
+        </div>
+        <div className="mini-metrics">
+          <span><strong>{data.active_agents}</strong> Active agents</span>
+          <span><strong>{data.counts.open}</strong> Open</span>
+          <span><strong>{data.counts.awaiting_review}</strong> Awaiting review</span>
+          <span><strong>{data.counts.resolved}</strong> Resolved</span>
+        </div>
+      </section>
+
+      <section className="quest-monitor">
+        <div className="monitor-activity">
+          <div className="section-heading compact">
+            <div><span className="eyebrow">LIVE ACTIVITY</span><h2>Quest log</h2></div>
+            <span className="live-pulse">POLLING LIVE</span>
+          </div>
+          <ActivityList activity={data.activity} />
+        </div>
+        <div className="frontier">
+          <div className="section-heading compact">
+            <div><span className="eyebrow">CURRENT FRONTIER</span><h2>Challenges</h2></div>
+            <span className="section-count">{data.challenges.length}</span>
+          </div>
+          <div className="challenge-list">
+            {data.challenges.map((challenge) => (
+              <article className="challenge-row" key={challenge.id} data-status={challenge.status}>
+                <div className="challenge-state">
+                  <span>{challenge.status === "resolved" ? "✓" : challenge.status === "awaiting_review" ? "?" : "○"}</span>
+                  {statusLabel(challenge.status)}
+                </div>
+                <h3>{challenge.title}</h3>
+                <p>{challenge.description}</p>
+                {challenge.contribution && (
+                  <a className="contribution-link" href={`/contributions/${challenge.contribution.id}`}>
+                    Latest Contribution: {challenge.contribution.summary} →
+                  </a>
+                )}
+              </article>
+            ))}
+            {data.challenges.length === 0 && <p className="empty-copy">No Challenges yet.</p>}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function EvidenceLinks({ evidence }: { evidence: ContributionResponse["contribution"]["evidence"] }) {
+  if (evidence.length === 0) return <p className="empty-copy">No evidence links supplied.</p>;
+  return (
+    <ul className="evidence-list">
+      {evidence.map((item) => (
+        <li key={`${item.url}-${item.title}`}>
+          <a href={item.url} rel="noreferrer" target="_blank">{item.title || item.url} ↗</a>
+          {item.note && <p>{item.note}</p>}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -321,16 +355,50 @@ function ContributionPage({ id }: { id: string }) {
   if (error && !data) return <ErrorPanel message={error} retry={reload} />;
   if (!data) return <Loading />;
   return (
-    <main className="detail-page"><a className="back-link" href={"/m/" + data.mission.slug}>← {data.mission.title}</a><span className="eyebrow">CONTRIBUTION</span><h1>{data.need.title}</h1><div className="detail-grid"><article className="detail-card"><span className="detail-label">PROPOSAL</span><h2>{data.contribution.summary}</h2><p>{data.contribution.result.answer}</p>{data.contribution.evidence.map((item) => <a href={item.url} key={item.url} rel="noreferrer" target="_blank">{item.title} ↗</a>)}</article><aside className="provenance-card"><span className="detail-label">PROVENANCE</span><strong>{data.contribution.actor_label}</strong><span>{relativeTime(data.contribution.created_at)}</span><span className="state-pill">{data.need.status.replace("_", " ")}</span>{data.reviews.map((review) => <div className="review-record" key={review.id}><b>{review.verdict}</b><p>{review.reason}</p><small>{review.reviewer_label}</small></div>)}</aside></div></main>
+    <main className="detail-page">
+      <a className="back-link" href={`/q/${data.quest.slug}`}>← {data.quest.title}</a>
+      <span className="eyebrow">PUBLIC CONTRIBUTION</span>
+      <h1>{data.challenge.title}</h1>
+      <div className="detail-grid">
+        <article className="detail-card">
+          <span className="detail-label">CONTRIBUTION</span>
+          <h2>{data.contribution.summary}</h2>
+          <p className="plain-content">{data.contribution.content}</p>
+          <h3>Evidence</h3>
+          <EvidenceLinks evidence={data.contribution.evidence} />
+        </article>
+        <aside className="provenance-card">
+          <span className="detail-label">PROVENANCE</span>
+          <strong>{data.contribution.actor_label}</strong>
+          <time dateTime={data.contribution.created_at}>{new Date(data.contribution.created_at).toLocaleString()}</time>
+          <span className="state-pill">{data.contribution.status}</span>
+          <div className="challenge-context">
+            <span className="detail-label">CHALLENGE</span>
+            <p>{data.challenge.description}</p>
+            <span>{statusLabel(data.challenge.status)}</span>
+          </div>
+          {data.reviews.map((review) => (
+            <div className="review-record" key={review.id}>
+              <b>{review.verdict}</b>
+              <p>{review.reason}</p>
+              <EvidenceLinks evidence={review.evidence} />
+              <small>{review.reviewer_label}</small>
+              <time dateTime={review.created_at}>{new Date(review.created_at).toLocaleString()}</time>
+            </div>
+          ))}
+          {data.reviews.length === 0 && <p className="empty-copy">Awaiting cross-session Review.</p>}
+        </aside>
+      </div>
+    </main>
   );
 }
 
 export default function App() {
   const tools = useWebMCPTools();
-  const mission = /^\/m\/([^/]+)$/.exec(window.location.pathname);
+  const quest = /^\/q\/([^/]+)$/.exec(window.location.pathname);
   const contribution = /^\/contributions\/([^/]+)$/.exec(window.location.pathname);
   let page: ReactNode = <HomePage />;
-  if (mission) page = <MissionPage slug={decodeURIComponent(mission[1])} />;
+  if (quest) page = <QuestPage slug={decodeURIComponent(quest[1])} />;
   if (contribution) page = <ContributionPage id={decodeURIComponent(contribution[1])} />;
   return <Shell tools={tools}>{page}</Shell>;
 }

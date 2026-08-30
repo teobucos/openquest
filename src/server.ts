@@ -1,66 +1,63 @@
 import { z } from "zod";
 import {
-  ContributionResultSchema,
+  CreateChallengeInputSchema,
+  CreateQuestInputSchema,
   EvidenceListSchema,
   GetNextWorkInputSchema,
-  ProposeNeedInputSchema,
   ReviewContributionInputSchema,
   SubmitContributionInputSchema,
-  type ApiErrorResponse
+  type ApiErrorResponse,
 } from "./contracts";
 
 interface Env {
   DB: D1Database;
 }
 
-interface Session {
-  id: string;
+interface ActorIdentity {
+  sessionId: string;
+  publicLabel: string;
   token: string;
   created: boolean;
   secure: boolean;
 }
 
-interface MissionRow {
+interface QuestRow {
   id: string;
   slug: string;
   title: string;
   goal: string;
   description: string;
-  type: "discover" | "structure" | "build";
   status: "active" | "complete";
   created_at: string;
   updated_at: string;
 }
 
-interface MissionCountRow extends MissionRow {
+interface QuestCountRow extends QuestRow {
   open_count: number;
   awaiting_review_count: number;
   resolved_count: number;
+  active_agents: number;
 }
 
-interface NeedRow {
+interface ChallengeRow {
   id: string;
-  mission_id: string;
+  quest_id: string;
+  parent_challenge_id: string | null;
   title: string;
-  instructions: string;
-  acceptance_criteria_json: string;
-  kind: "question" | "gap" | "check" | "artifact" | "dispute";
-  rationale: string;
-  priority: number;
+  description: string;
   status: "open" | "awaiting_review" | "resolved";
-  parent_need_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
 interface ContributionRow {
   id: string;
-  need_id: string;
+  challenge_id: string;
   session_id: string;
   summary: string;
-  result_json: string;
+  content: string;
   evidence_json: string;
-  status: "pending" | "accepted" | "challenged" | "superseded";
+  status: "pending" | "accepted" | "challenged";
   created_at: string;
 }
 
@@ -68,7 +65,7 @@ interface ReviewRow {
   id: string;
   contribution_id: string;
   reviewer_session_id: string;
-  verdict: "support" | "challenge" | "needs_work";
+  verdict: "support" | "challenge";
   reason: string;
   evidence_json: string;
   created_at: string;
@@ -76,96 +73,127 @@ interface ReviewRow {
 
 interface EventRow {
   sequence: number;
-  mission_id: string;
-  entity_type: "need" | "contribution" | "review";
+  quest_id: string;
+  entity_type: "quest" | "challenge" | "contribution" | "review";
   entity_id: string;
   event_type:
-    | "need.created"
+    | "quest.created"
+    | "challenge.created"
     | "contribution.created"
     | "review.supported"
-    | "review.challenged"
-    | "review.needs_work";
+    | "review.challenged";
   actor_session_id: string | null;
   payload_json: string;
   created_at: string;
 }
 
-interface PublicEvent {
-  sequence: number;
-  mission_id: string;
-  entity_type: EventRow["entity_type"];
-  entity_id: string;
-  event_type: EventRow["event_type"];
-  actor_label: string | null;
-  summary: string;
-  created_at: string;
+interface LatestContributionRow extends ContributionRow {
+  challenge_title: string;
+  challenge_description: string;
+  challenge_status: ChallengeRow["status"];
+  challenge_parent_id: string | null;
+  challenge_created_at: string;
+  challenge_updated_at: string;
+  quest_id: string;
+  quest_slug: string;
+  quest_title: string;
+  quest_goal: string;
+  quest_description: string;
 }
 
-interface NextContributionRow extends ContributionRow {
-  need_title: string;
-  need_instructions: string;
-  acceptance_criteria_json: string;
-  rationale: string;
-  kind: NeedRow["kind"];
-  priority: number;
-  mission_id: string;
-  mission_slug: string;
-  mission_title: string;
-  mission_type: "discover" | "structure" | "build";
+interface NextChallengeRow extends ChallengeRow {
+  quest_slug: string;
+  quest_title: string;
+  quest_goal: string;
+  quest_description: string;
 }
 
-interface NextNeedRow extends NeedRow {
-  mission_slug: string;
-  mission_title: string;
-  mission_type: "discover" | "structure" | "build";
-}
-
-interface ContributionContextRow extends ContributionRow {
-  need_title: string;
-  need_kind: NeedRow["kind"];
-  need_instructions: string;
-  need_rationale: string;
-  need_acceptance_criteria_json: string;
-  need_priority: number;
-  need_status: "open" | "awaiting_review" | "resolved";
-  need_parent_need_id: string | null;
-  need_created_at: string;
-  need_updated_at: string;
-  mission_id: string;
-  mission_slug: string;
-  mission_title: string;
+interface NextReviewRow extends ContributionRow {
+  challenge_title: string;
+  challenge_description: string;
+  quest_id: string;
+  quest_slug: string;
+  quest_title: string;
+  quest_goal: string;
+  quest_description: string;
 }
 
 interface ReviewContextRow {
   id: string;
   session_id: string;
   status: ContributionRow["status"];
-  need_status: NeedRow["status"];
+  challenge_status: ChallengeRow["status"];
 }
 
+interface CountRow {
+  count: number;
+}
+
+interface QuestTotalsRow {
+  open_count: number;
+  awaiting_review_count: number;
+  resolved_count: number;
+}
+
+interface IdRow {
+  id: string;
+}
+
+interface EventPayload {
+  quest_title?: string;
+  challenge_id?: string;
+  challenge_title?: string;
+  contribution_id?: string;
+  contribution_summary?: string;
+}
+
+const EventPayloadSchema: z.ZodType<EventPayload> = z
+  .object({
+    quest_title: z.string().optional(),
+    challenge_id: z.string().optional(),
+    challenge_title: z.string().optional(),
+    contribution_id: z.string().optional(),
+    contribution_summary: z.string().optional(),
+  })
+  .strip();
+
+const worldLimitSchema = z.coerce.number().int().min(1).max(20).default(10);
+const identifierQuerySchema = z.string().trim().min(1).max(128).optional();
+const sessionPattern = /^[0-9a-f-]{36}$/;
+const sessionCookie = "oq_session";
+
 class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    readonly code: ApiErrorResponse["status"] = "error"
+  public constructor(
+    readonly httpStatus: number,
+    readonly payload: ApiErrorResponse,
   ) {
-    super(message);
+    super(payload.message);
+    this.name = "HttpError";
   }
 }
 
-const acceptanceCriteriaSchema = z.array(z.string().trim().min(1).max(240)).max(6);
-const eventPayloadSchema = z.object({ title: z.string().trim().max(400).optional() }).passthrough();
-const worldLimitSchema = z.coerce.number().int().min(1).max(20).default(10);
-const sessionPattern = /^[0-9a-f-]{36}$/;
-const sessionCookie = "os_session";
+function nextAction(reason: string) {
+  return { tool: "openquest_next" as const, reason };
+}
 
-function json<Value>(value: Value, status = 200, session?: Session): Response {
+function fail(
+  httpStatus: number,
+  status: ApiErrorResponse["status"],
+  message: string,
+  action?: ReturnType<typeof nextAction>,
+): never {
+  throw new HttpError(httpStatus, action
+    ? { status, message, next_action: action }
+    : { status, message });
+}
+
+function json<Value>(value: Value, status = 200, identity?: ActorIdentity): Response {
   const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
-  if (session?.created) {
-    const secure = session.secure ? "Secure; " : "";
+  if (identity?.created) {
+    const secure = identity.secure ? "Secure; " : "";
     headers.append(
       "set-cookie",
-      `${sessionCookie}=${session.token}; Path=/; HttpOnly; ${secure}SameSite=Lax; Max-Age=31536000`
+      `${sessionCookie}=${identity.token}; Path=/; HttpOnly; ${secure}SameSite=Lax; Max-Age=31536000`,
     );
   }
   return new Response(JSON.stringify(value), { status, headers });
@@ -181,33 +209,12 @@ function cookieValue(request: Request, name: string): string | null {
   return null;
 }
 
-async function ensureSession(request: Request, env: Env): Promise<Session> {
-  const supplied = cookieValue(request, sessionCookie);
-  const now = new Date().toISOString();
-  const secure = new URL(request.url).protocol === "https:"
-    || request.headers.get("x-forwarded-proto") === "https";
-  if (supplied && sessionPattern.test(supplied)) {
-    const tokenHash = await hashText(`openshare-session:${supplied}`);
-    const existing = await env.DB.prepare("SELECT id FROM sessions WHERE token_hash = ?")
-      .bind(tokenHash)
-      .first<{ id: string }>();
-    if (existing) {
-      await env.DB.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?")
-        .bind(now, existing.id)
-        .run();
-      return { id: existing.id, token: supplied, created: false, secure };
-    }
-  }
+function publicLabel(sessionId: string): string {
+  return `Agent ${sessionId.replaceAll("-", "").slice(-6).toUpperCase()}`;
+}
 
-  const id = crypto.randomUUID();
-  const token = crypto.randomUUID();
-  const tokenHash = await hashText(`openshare-session:${token}`);
-  await env.DB.prepare(
-    "INSERT INTO sessions (id, token_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?)"
-  )
-    .bind(id, tokenHash, now, now)
-    .run();
-  return { id, token, created: true, secure };
+function identitiesMatch(left: ActorIdentity, sessionId: string): boolean {
+  return left.sessionId === sessionId;
 }
 
 async function hashText(value: string): Promise<string> {
@@ -217,87 +224,126 @@ async function hashText(value: string): Promise<string> {
     .join("");
 }
 
-async function hashAddress(request: Request): Promise<string> {
-  const address = request.headers.get("cf-connecting-ip") ?? "local";
-  return (await hashText(`openshare-address:${address}`)).slice(0, 24);
+function secureRequest(request: Request): boolean {
+  return new URL(request.url).protocol === "https:"
+    || request.headers.get("x-forwarded-proto") === "https";
 }
 
-async function enforceWriteLimit(request: Request, env: Env, session: Session): Promise<void> {
-  const bucket = Math.floor(Date.now() / 60_000);
-  const resetAt = new Date((bucket + 1) * 60_000).toISOString();
-  const ipHash = await hashAddress(request);
-  const keys = [`session:${session.id}:${bucket}`, `ip:${ipHash}:${bucket}`];
-  const statements = keys.map((key) =>
-    env.DB.prepare(
-      "INSERT INTO rate_limits (bucket_key, window_started_at, request_count, updated_at) VALUES (?, ?, 1, ?) " +
-        "ON CONFLICT(bucket_key, window_started_at) DO UPDATE SET " +
-        "request_count = request_count + 1, updated_at = excluded.updated_at"
-    ).bind(key, String(bucket), resetAt)
-  );
-  await env.DB.batch(statements);
-  const row = await env.DB.prepare(
-    "SELECT MAX(request_count) AS count FROM rate_limits " +
-      "WHERE bucket_key IN (?, ?) AND window_started_at = ?"
+async function readIdentity(request: Request, env: Env): Promise<ActorIdentity | null> {
+  const supplied = cookieValue(request, sessionCookie);
+  if (!supplied || !sessionPattern.test(supplied)) return null;
+  const tokenHash = await hashText(`openquest-session:${supplied}`);
+  const existing = await env.DB.prepare("SELECT id FROM sessions WHERE token_hash = ?")
+    .bind(tokenHash)
+    .first<IdRow>();
+  if (!existing) return null;
+  return {
+    sessionId: existing.id,
+    publicLabel: publicLabel(existing.id),
+    token: supplied,
+    created: false,
+    secure: secureRequest(request),
+  };
+}
+
+async function ensureIdentity(request: Request, env: Env): Promise<ActorIdentity> {
+  const existing = await readIdentity(request, env);
+  const now = new Date().toISOString();
+  if (existing) {
+    await env.DB.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?")
+      .bind(now, existing.sessionId)
+      .run();
+    return existing;
+  }
+
+  const sessionId = crypto.randomUUID();
+  const token = crypto.randomUUID();
+  const tokenHash = await hashText(`openquest-session:${token}`);
+  await env.DB.prepare(
+    "INSERT INTO sessions (id, token_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?)",
   )
-    .bind(keys[0], keys[1], String(bucket))
-    .first<{ count: number }>();
-  if ((row?.count ?? 0) > 30) {
-    throw new HttpError(429, "Anonymous write limit reached. Try again after one minute.", "rate_limited");
+    .bind(sessionId, tokenHash, now, now)
+    .run();
+  return {
+    sessionId,
+    publicLabel: publicLabel(sessionId),
+    token,
+    created: true,
+    secure: secureRequest(request),
+  };
+}
+
+async function hashAddress(request: Request): Promise<string> {
+  const address = request.headers.get("cf-connecting-ip") ?? "local";
+  return (await hashText(`openquest-address:${address}`)).slice(0, 24);
+}
+
+async function enforceWriteLimit(
+  request: Request,
+  env: Env,
+  identity: ActorIdentity,
+): Promise<void> {
+  const bucket = Math.floor(Date.now() / 60_000);
+  const bucketText = String(bucket);
+  const updatedAt = new Date().toISOString();
+  const ipHash = await hashAddress(request);
+  const sessionKey = `session:${identity.sessionId}:${bucket}`;
+  const ipKey = `ip:${ipHash}:${bucket}`;
+  const statement =
+    "INSERT INTO rate_limits (bucket_key, window_started_at, request_count, updated_at) "
+    + "VALUES (?, ?, 1, ?) ON CONFLICT(bucket_key, window_started_at) DO UPDATE SET "
+    + "request_count = request_count + 1, updated_at = excluded.updated_at";
+  await env.DB.batch([
+    env.DB.prepare(statement).bind(sessionKey, bucketText, updatedAt),
+    env.DB.prepare(statement).bind(ipKey, bucketText, updatedAt),
+  ]);
+  const usage = await env.DB.prepare(
+    "SELECT MAX(request_count) AS count FROM rate_limits "
+    + "WHERE bucket_key IN (?, ?) AND window_started_at = ?",
+  )
+    .bind(sessionKey, ipKey, bucketText)
+    .first<CountRow>();
+  if ((usage?.count ?? 0) > 30) {
+    fail(429, "rate_limited", "Anonymous write limit reached. Try again after one minute.");
   }
 }
 
-function presentMission(row: MissionRow) {
+function presentQuest(row: QuestRow) {
   return {
     id: row.id,
     slug: row.slug,
     title: row.title,
     goal: row.goal,
     description: row.description,
-    type: row.type,
     status: row.status,
-    created_at: row.created_at,
-    updated_at: row.updated_at
-  };
-}
-
-function parseCriteria(value: string): string[] {
-  return acceptanceCriteriaSchema.parse(JSON.parse(value));
-}
-
-function presentWorkNeed(row: NeedRow) {
-  return {
-    id: row.id,
-    mission_id: row.mission_id,
-    kind: row.kind,
-    title: row.title,
-    instructions: row.instructions,
-    rationale: row.rationale,
-    acceptance_criteria: parseCriteria(row.acceptance_criteria_json),
-    priority: row.priority,
-  };
-}
-
-function presentNeed(row: NeedRow, contribution: ContributionRow | null = null) {
-  return {
-    ...presentWorkNeed(row),
-    status: row.status,
-    parent_need_id: row.parent_need_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    contribution: contribution ? presentContribution(contribution) : null
+  };
+}
+
+function presentChallenge(row: ChallengeRow) {
+  return {
+    id: row.id,
+    quest_id: row.quest_id,
+    parent_challenge_id: row.parent_challenge_id,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
   };
 }
 
 function presentContribution(row: ContributionRow) {
   return {
     id: row.id,
-    need_id: row.need_id,
-    actor_label: `Session ${row.session_id.slice(0, 6)}`,
+    challenge_id: row.challenge_id,
+    actor_label: publicLabel(row.session_id),
     summary: row.summary,
-    result: ContributionResultSchema.parse(JSON.parse(row.result_json)),
+    content: row.content,
     evidence: EvidenceListSchema.parse(JSON.parse(row.evidence_json)),
     status: row.status,
-    created_at: row.created_at
+    created_at: row.created_at,
   };
 }
 
@@ -305,462 +351,621 @@ function presentReview(row: ReviewRow) {
   return {
     id: row.id,
     contribution_id: row.contribution_id,
-    reviewer_label: `Session ${row.reviewer_session_id.slice(0, 6)}`,
+    reviewer_label: publicLabel(row.reviewer_session_id),
     verdict: row.verdict,
     reason: row.reason,
     evidence: EvidenceListSchema.parse(JSON.parse(row.evidence_json)),
-    created_at: row.created_at
+    created_at: row.created_at,
   };
 }
 
-function presentEvent(row: EventRow): PublicEvent {
-  const payload = eventPayloadSchema.parse(JSON.parse(row.payload_json));
-  const label = row.event_type
-    .replace("need.created", "New Need proposed")
-    .replace("contribution.created", "Contribution submitted")
-    .replace("review.supported", "Contribution supported")
-    .replace("review.challenged", "Contribution challenged")
-    .replace("review.needs_work", "More work requested");
+function presentEvent(row: EventRow) {
+  const payload = EventPayloadSchema.parse(JSON.parse(row.payload_json));
+  let summary: string;
+  switch (row.event_type) {
+    case "quest.created":
+      summary = `New Quest: ${payload.quest_title ?? row.entity_id}`;
+      break;
+    case "challenge.created":
+      summary = `New Challenge: ${payload.challenge_title ?? row.entity_id}`;
+      break;
+    case "contribution.created":
+      summary = `Contribution submitted: ${payload.challenge_title ?? row.entity_id}`;
+      break;
+    case "review.supported":
+      summary = `Resolved: ${payload.challenge_title ?? row.entity_id}`;
+      break;
+    case "review.challenged":
+      summary = `Reopened: ${payload.challenge_title ?? row.entity_id}`;
+      break;
+  }
   return {
     sequence: row.sequence,
-    mission_id: row.mission_id,
+    quest_id: row.quest_id,
     entity_type: row.entity_type,
     entity_id: row.entity_id,
     event_type: row.event_type,
-    actor_label: row.actor_session_id ? `Session ${row.actor_session_id.slice(0, 6)}` : null,
-    summary: payload.title ? `${label}: ${payload.title}` : label,
-    created_at: row.created_at
+    actor_label: row.actor_session_id ? publicLabel(row.actor_session_id) : null,
+    summary,
+    created_at: row.created_at,
   };
 }
 
-async function recentEvents(env: Env, missionId?: string): Promise<PublicEvent[]> {
-  const filter = missionId ? " WHERE mission_id = ?" : "";
+async function recentEvents(env: Env, questId: string | undefined, limit: number) {
+  const filter = questId ? " WHERE quest_id = ?" : "";
   const statement = env.DB.prepare(
-    "SELECT sequence, mission_id, entity_type, entity_id, event_type, actor_session_id, payload_json, created_at " +
-      `FROM events${filter} ORDER BY sequence DESC LIMIT 20`
+    "SELECT sequence, quest_id, entity_type, entity_id, event_type, actor_session_id, "
+    + `payload_json, created_at FROM events${filter} ORDER BY sequence DESC LIMIT ?`,
   );
-  const result = missionId
-    ? await statement.bind(missionId).all<EventRow>()
-    : await statement.all<EventRow>();
+  const result = questId
+    ? await statement.bind(questId, limit).all<EventRow>()
+    : await statement.bind(limit).all<EventRow>();
   return result.results.map(presentEvent);
 }
 
-async function world(env: Env, missionId: string | undefined, limit: number) {
-  const filter = missionId ? "WHERE m.id = ? " : "";
+async function activeAgentCount(env: Env, questId?: string): Promise<number> {
+  const filter = questId ? " AND quest_id = ?" : "";
   const statement = env.DB.prepare(
-    "SELECT m.id, m.slug, m.title, m.goal, m.description, m.type, m.status, m.created_at, m.updated_at, " +
-      "SUM(CASE WHEN n.status = 'open' THEN 1 ELSE 0 END) AS open_count, " +
-      "SUM(CASE WHEN n.status = 'awaiting_review' THEN 1 ELSE 0 END) AS awaiting_review_count, " +
-      "SUM(CASE WHEN n.status = 'resolved' THEN 1 ELSE 0 END) AS resolved_count " +
-      "FROM missions m LEFT JOIN needs n ON n.mission_id = m.id " +
-      `${filter}GROUP BY m.id ORDER BY m.created_at${missionId ? "" : " LIMIT ?"}`
+    "SELECT COUNT(DISTINCT actor_session_id) AS count FROM events "
+    + "WHERE event_type IN ('challenge.created', 'contribution.created', "
+    + "'review.supported', 'review.challenged') "
+    + "AND actor_session_id IS NOT NULL "
+    + "AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')"
+    + filter,
   );
-  const result = missionId
-    ? await statement.bind(missionId).all<MissionCountRow>()
-    : await statement.bind(limit).all<MissionCountRow>();
-  const missions = result.results.map((row) => {
-    const total = row.open_count + row.awaiting_review_count + row.resolved_count;
+  const result = questId
+    ? await statement.bind(questId).first<CountRow>()
+    : await statement.first<CountRow>();
+  return result?.count ?? 0;
+}
+
+async function challengesForQuest(env: Env, questId: string) {
+  const result = await env.DB.prepare(
+    "SELECT id, quest_id, parent_challenge_id, title, description, status, created_at, updated_at "
+    + "FROM challenges WHERE quest_id = ? "
+    + "ORDER BY CASE status WHEN 'awaiting_review' THEN 0 WHEN 'open' THEN 1 ELSE 2 END, created_at, id",
+  )
+    .bind(questId)
+    .all<ChallengeRow>();
+  const contributionResult = await env.DB.prepare(
+    "SELECT c.id, c.challenge_id, c.session_id, c.summary, c.content, c.evidence_json, c.status, c.created_at "
+    + "FROM contributions c JOIN challenges h ON h.id = c.challenge_id WHERE h.quest_id = ? "
+    + "AND c.id = (SELECT c2.id FROM contributions c2 WHERE c2.challenge_id = c.challenge_id "
+    + "ORDER BY c2.created_at DESC, c2.id DESC LIMIT 1)",
+  )
+    .bind(questId)
+    .all<ContributionRow>();
+  const latestByChallenge = new Map(
+    contributionResult.results.map((contribution) => [contribution.challenge_id, contribution]),
+  );
+  return result.results.map((challenge) => {
+    const contribution = latestByChallenge.get(challenge.id);
     return {
-      ...presentMission(row),
-      counts: {
-        open: row.open_count,
-        awaiting_review: row.awaiting_review_count,
-        resolved: row.resolved_count
-      },
-      progress: total === 0 ? 0 : Math.round((row.resolved_count / total) * 100)
+      ...presentChallenge(challenge),
+      contribution: contribution ? presentContribution(contribution) : null,
     };
   });
-  const totals = missions.reduce(
-    (sum, mission) => ({
-      open: sum.open + mission.counts.open,
-      awaiting_review: sum.awaiting_review + mission.counts.awaiting_review,
-      resolved: sum.resolved + mission.counts.resolved
-    }),
-    { open: 0, awaiting_review: 0, resolved: 0 }
+}
+
+async function world(env: Env, questId: string | undefined, limit: number) {
+  const filter = questId ? "WHERE q.id = ? AND q.status = 'active' " : "WHERE q.status = 'active' ";
+  const sql =
+    "SELECT q.id, q.slug, q.title, q.goal, q.description, q.status, q.created_at, q.updated_at, "
+    + "SUM(CASE WHEN c.status = 'open' THEN 1 ELSE 0 END) AS open_count, "
+    + "SUM(CASE WHEN c.status = 'awaiting_review' THEN 1 ELSE 0 END) AS awaiting_review_count, "
+    + "SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END) AS resolved_count, "
+    + "(SELECT COUNT(DISTINCT e.actor_session_id) FROM events e WHERE e.quest_id = q.id "
+    + "AND e.event_type IN ('challenge.created', 'contribution.created', 'review.supported', 'review.challenged') "
+    + "AND e.actor_session_id IS NOT NULL "
+    + "AND e.created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')) AS active_agents "
+    + "FROM quests q LEFT JOIN challenges c ON c.quest_id = q.id "
+    + `${filter}GROUP BY q.id ORDER BY q.created_at, q.id${questId ? "" : " LIMIT ?"}`;
+  const result = questId
+    ? await env.DB.prepare(sql).bind(questId).all<QuestCountRow>()
+    : await env.DB.prepare(sql).bind(limit).all<QuestCountRow>();
+  if (questId && result.results.length === 0) {
+    fail(404, "not_found", "Active Quest not found.", nextAction("Choose another active Quest."));
+  }
+  const quests = result.results.map((row) => ({
+    ...presentQuest(row),
+    counts: {
+      open: row.open_count,
+      awaiting_review: row.awaiting_review_count,
+      resolved: row.resolved_count,
+    },
+    active_agents: row.active_agents,
+  }));
+  const totalsFilter = questId ? " AND q.id = ?" : "";
+  const totalsStatement = env.DB.prepare(
+    "SELECT SUM(CASE WHEN c.status = 'open' THEN 1 ELSE 0 END) AS open_count, "
+    + "SUM(CASE WHEN c.status = 'awaiting_review' THEN 1 ELSE 0 END) AS awaiting_review_count, "
+    + "SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END) AS resolved_count "
+    + "FROM quests q LEFT JOIN challenges c ON c.quest_id = q.id WHERE q.status = 'active'"
+    + totalsFilter,
   );
+  const totalRow = questId
+    ? await totalsStatement.bind(questId).first<QuestTotalsRow>()
+    : await totalsStatement.first<QuestTotalsRow>();
+  const totals = {
+    open: totalRow?.open_count ?? 0,
+    awaiting_review: totalRow?.awaiting_review_count ?? 0,
+    resolved: totalRow?.resolved_count ?? 0,
+  };
   return {
-    missions,
+    quests,
     totals,
-    activity: await recentEvents(env, missionId),
-    suggested_next: "Call get_next_work to receive one useful item."
+    active_agents: await activeAgentCount(env, questId),
+    activity: await recentEvents(env, questId, limit),
+    suggested_next: "Call openquest_next to receive one useful item.",
+    challenges: questId ? await challengesForQuest(env, questId) : [],
   };
 }
 
-async function missionDetail(env: Env, slug: string) {
-  const mission = await env.DB.prepare(
-    "SELECT id, slug, title, goal, description, type, status, created_at, updated_at FROM missions WHERE slug = ?"
+async function questDetail(env: Env, slug: string) {
+  const quest = await env.DB.prepare(
+    "SELECT id, slug, title, goal, description, status, created_at, updated_at FROM quests WHERE slug = ?",
   )
     .bind(slug)
-    .first<MissionRow>();
-  if (!mission) throw new HttpError(404, "Mission not found.", "not_found");
-  const needResult = await env.DB.prepare(
-    "SELECT id, mission_id, kind, title, instructions, rationale, acceptance_criteria_json, priority, status, " +
-      "parent_need_id, created_at, updated_at FROM needs WHERE mission_id = ? " +
-      "ORDER BY CASE status WHEN 'awaiting_review' THEN 0 WHEN 'open' THEN 1 ELSE 2 END, priority DESC, created_at " +
-      "LIMIT 100"
+    .first<QuestRow>();
+  if (!quest) fail(404, "not_found", "Quest not found.");
+  const challengeResult = await env.DB.prepare(
+    "SELECT id, quest_id, parent_challenge_id, title, description, status, created_at, updated_at "
+    + "FROM challenges WHERE quest_id = ? "
+    + "ORDER BY CASE status WHEN 'awaiting_review' THEN 0 WHEN 'open' THEN 1 ELSE 2 END, created_at, id",
   )
-    .bind(mission.id)
-    .all<NeedRow>();
+    .bind(quest.id)
+    .all<ChallengeRow>();
   const contributionResult = await env.DB.prepare(
-    "SELECT c.id, c.need_id, c.session_id, c.summary, c.result_json, c.evidence_json, c.status, c.created_at " +
-      "FROM contributions c JOIN needs n ON n.id = c.need_id WHERE n.mission_id = ? " +
-      "AND c.id = (SELECT c2.id FROM contributions c2 WHERE c2.need_id = c.need_id " +
-      "ORDER BY c2.created_at DESC LIMIT 1) ORDER BY c.created_at DESC LIMIT 100"
+    "SELECT c.id, c.challenge_id, c.session_id, c.summary, c.content, c.evidence_json, c.status, c.created_at "
+    + "FROM contributions c JOIN challenges h ON h.id = c.challenge_id WHERE h.quest_id = ? "
+    + "AND c.id = (SELECT c2.id FROM contributions c2 WHERE c2.challenge_id = c.challenge_id "
+    + "ORDER BY c2.created_at DESC, c2.id DESC LIMIT 1)",
   )
-    .bind(mission.id)
+    .bind(quest.id)
     .all<ContributionRow>();
-  const contributionByNeed = new Map(
-    contributionResult.results.map((contribution) => [contribution.need_id, contribution])
+  const latestByChallenge = new Map(
+    contributionResult.results.map((contribution) => [contribution.challenge_id, contribution]),
   );
-  const needs = needResult.results.map((need) =>
-    presentNeed(need, contributionByNeed.get(need.id) ?? null)
-  );
+  const challenges = challengeResult.results.map((challenge) => {
+    const contribution = latestByChallenge.get(challenge.id);
+    return {
+      ...presentChallenge(challenge),
+      contribution: contribution ? presentContribution(contribution) : null,
+    };
+  });
   return {
-    mission: presentMission(mission),
+    quest: presentQuest(quest),
     counts: {
-      open: needs.filter((need) => need.status === "open").length,
-      awaiting_review: needs.filter((need) => need.status === "awaiting_review").length,
-      resolved: needs.filter((need) => need.status === "resolved").length
+      open: challenges.filter((challenge) => challenge.status === "open").length,
+      awaiting_review: challenges.filter((challenge) => challenge.status === "awaiting_review").length,
+      resolved: challenges.filter((challenge) => challenge.status === "resolved").length,
     },
-    needs,
-    activity: await recentEvents(env, mission.id)
+    active_agents: await activeAgentCount(env, quest.id),
+    challenges,
+    activity: await recentEvents(env, quest.id, 50),
   };
 }
 
 async function contributionDetail(env: Env, id: string) {
   const contribution = await env.DB.prepare(
-    "SELECT c.id, c.need_id, c.session_id, c.summary, c.result_json, c.evidence_json, c.status, c.created_at, " +
-      "n.title AS need_title, n.kind AS need_kind, n.instructions AS need_instructions, " +
-      "n.rationale AS need_rationale, n.acceptance_criteria_json AS need_acceptance_criteria_json, " +
-      "n.priority AS need_priority, n.status AS need_status, n.parent_need_id AS need_parent_need_id, " +
-      "n.created_at AS need_created_at, n.updated_at AS need_updated_at, " +
-      "m.id AS mission_id, m.slug AS mission_slug, m.title AS mission_title " +
-      "FROM contributions c JOIN needs n ON n.id = c.need_id JOIN missions m ON m.id = n.mission_id WHERE c.id = ?"
+    "SELECT c.id, c.challenge_id, c.session_id, c.summary, c.content, c.evidence_json, c.status, c.created_at, "
+    + "h.title AS challenge_title, h.description AS challenge_description, h.status AS challenge_status, "
+    + "h.parent_challenge_id AS challenge_parent_id, h.created_at AS challenge_created_at, "
+    + "h.updated_at AS challenge_updated_at, q.id AS quest_id, q.slug AS quest_slug, "
+    + "q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description "
+    + "FROM contributions c JOIN challenges h ON h.id = c.challenge_id "
+    + "JOIN quests q ON q.id = h.quest_id WHERE c.id = ?",
   )
     .bind(id)
-    .first<ContributionContextRow>();
-  if (!contribution) throw new HttpError(404, "Contribution not found.", "not_found");
-  const reviewResult = await env.DB.prepare(
-    "SELECT id, contribution_id, reviewer_session_id, verdict, reason, evidence_json, created_at " +
-      "FROM reviews WHERE contribution_id = ? ORDER BY created_at"
+    .first<LatestContributionRow>();
+  if (!contribution) fail(404, "not_found", "Contribution not found.");
+  const reviews = await env.DB.prepare(
+    "SELECT id, contribution_id, reviewer_session_id, verdict, reason, evidence_json, created_at "
+    + "FROM reviews WHERE contribution_id = ? ORDER BY created_at, id",
   )
     .bind(id)
     .all<ReviewRow>();
   return {
     contribution: presentContribution(contribution),
-    need: {
-      id: contribution.need_id,
-      mission_id: contribution.mission_id,
-      parent_need_id: contribution.need_parent_need_id,
-      kind: contribution.need_kind,
-      title: contribution.need_title,
-      instructions: contribution.need_instructions,
-      rationale: contribution.need_rationale,
-      acceptance_criteria: parseCriteria(contribution.need_acceptance_criteria_json),
-      priority: contribution.need_priority,
-      status: contribution.need_status,
-      created_at: contribution.need_created_at,
-      updated_at: contribution.need_updated_at
+    challenge: {
+      id: contribution.challenge_id,
+      quest_id: contribution.quest_id,
+      parent_challenge_id: contribution.challenge_parent_id,
+      title: contribution.challenge_title,
+      description: contribution.challenge_description,
+      status: contribution.challenge_status,
+      created_at: contribution.challenge_created_at,
+      updated_at: contribution.challenge_updated_at,
     },
-    mission: {
-      id: contribution.mission_id,
-      slug: contribution.mission_slug,
-      title: contribution.mission_title
+    quest: {
+      id: contribution.quest_id,
+      slug: contribution.quest_slug,
+      title: contribution.quest_title,
     },
-    reviews: reviewResult.results.map(presentReview)
+    reviews: reviews.results.map(presentReview),
   };
 }
 
-async function nextWork(env: Env, session: Session, body: z.infer<typeof GetNextWorkInputSchema>) {
-  const mode = body.mode ?? "any";
-  if (mode !== "contribute") {
+function slugBase(title: string): string {
+  const slug = title
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72)
+    .replace(/-+$/g, "");
+  return slug.length >= 3 ? slug : "quest";
+}
+
+async function uniqueSlug(env: Env, title: string): Promise<string> {
+  const base = slugBase(title);
+  const existing = await env.DB.prepare("SELECT id FROM quests WHERE slug = ?")
+    .bind(base)
+    .first<IdRow>();
+  if (!existing) return base;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
+    const candidate = `${base.slice(0, 73)}-${suffix}`;
+    const collision = await env.DB.prepare("SELECT id FROM quests WHERE slug = ?")
+      .bind(candidate)
+      .first<IdRow>();
+    if (!collision) return candidate;
+  }
+  fail(409, "conflict", "Could not generate a unique Quest slug. Please retry.");
+}
+
+async function createQuest(
+  env: Env,
+  identity: ActorIdentity,
+  input: z.infer<typeof CreateQuestInputSchema>,
+) {
+  const id = crypto.randomUUID();
+  const slug = await uniqueSlug(env, input.title);
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    "INSERT INTO quests (id, slug, title, goal, description, status, created_by_session_id, created_at, updated_at) "
+    + "VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)",
+  )
+    .bind(id, slug, input.title, input.goal, input.description ?? "", identity.sessionId, now, now)
+    .run();
+  return {
+    status: "created" as const,
+    kind: "quest" as const,
+    quest_id: id,
+    slug,
+    quest_status: "active" as const,
+    message: "Quest created and public.",
+    next_action: nextAction("Find useful work in the new Quest."),
+  };
+}
+
+async function createChallenge(
+  env: Env,
+  identity: ActorIdentity,
+  input: z.infer<typeof CreateChallengeInputSchema>,
+) {
+  const quest = await env.DB.prepare("SELECT id FROM quests WHERE id = ? AND status = 'active'")
+    .bind(input.quest_id)
+    .first<IdRow>();
+  if (!quest) {
+    fail(409, "quest_unavailable", "This Quest is not active.", nextAction("Choose another active Quest."));
+  }
+  if (input.parent_challenge_id) {
+    const parent = await env.DB.prepare("SELECT id FROM challenges WHERE id = ? AND quest_id = ?")
+      .bind(input.parent_challenge_id, input.quest_id)
+      .first<IdRow>();
+    if (!parent) fail(400, "invalid_input", "Parent Challenge does not belong to this Quest.");
+  }
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    "INSERT INTO challenges (id, quest_id, parent_challenge_id, title, description, status, "
+    + "created_by_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?)",
+  )
+    .bind(
+      id,
+      input.quest_id,
+      input.parent_challenge_id ?? null,
+      input.title,
+      input.description,
+      identity.sessionId,
+      now,
+      now,
+    )
+    .run();
+  return {
+    status: "created" as const,
+    kind: "challenge" as const,
+    challenge_id: id,
+    quest_id: input.quest_id,
+    challenge_status: "open" as const,
+    message: "Challenge added to the public frontier.",
+    next_action: nextAction("The Challenge is ready for a Contribution."),
+  };
+}
+
+async function requireActiveQuest(env: Env, questId: string): Promise<void> {
+  const quest = await env.DB.prepare("SELECT id FROM quests WHERE id = ? AND status = 'active'")
+    .bind(questId)
+    .first<IdRow>();
+  if (!quest) {
+    fail(409, "quest_unavailable", "This Quest is not active.", nextAction("Choose another active Quest."));
+  }
+}
+
+async function nextWork(
+  env: Env,
+  identity: ActorIdentity | null,
+  input: z.infer<typeof GetNextWorkInputSchema>,
+) {
+  if (input.quest_id) await requireActiveQuest(env, input.quest_id);
+  if (input.mode !== "contribute") {
     let sql =
-      "SELECT c.id, c.need_id, c.session_id, c.summary, c.result_json, c.evidence_json, c.status, c.created_at, " +
-      "n.title AS need_title, n.instructions AS need_instructions, n.rationale, n.acceptance_criteria_json, " +
-      "n.kind, n.priority, m.id AS mission_id, m.slug AS mission_slug, " +
-      "m.title AS mission_title, m.type AS mission_type " +
-      "FROM contributions c JOIN needs n ON n.id = c.need_id JOIN missions m ON m.id = n.mission_id " +
-      "WHERE c.status = 'pending' AND c.session_id <> ?";
-    const bindings: string[] = [session.id];
-    if (body.mission_id) {
-      sql += " AND m.id = ?";
-      bindings.push(body.mission_id);
+      "SELECT c.id, c.challenge_id, c.session_id, c.summary, c.content, c.evidence_json, c.status, c.created_at, "
+      + "h.title AS challenge_title, h.description AS challenge_description, q.id AS quest_id, "
+      + "q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description "
+      + "FROM contributions c JOIN challenges h ON h.id = c.challenge_id "
+      + "JOIN quests q ON q.id = h.quest_id WHERE c.status = 'pending' "
+      + "AND h.status = 'awaiting_review' AND q.status = 'active'";
+    const bindings: string[] = [];
+    if (identity) {
+      sql += " AND c.session_id <> ?";
+      bindings.push(identity.sessionId);
     }
-    sql += " ORDER BY c.created_at LIMIT 1";
-    const review = await env.DB.prepare(sql).bind(...bindings).first<NextContributionRow>();
+    if (input.quest_id) {
+      sql += " AND q.id = ?";
+      bindings.push(input.quest_id);
+    }
+    sql += " ORDER BY c.created_at, c.id LIMIT 1";
+    const review = await env.DB.prepare(sql).bind(...bindings).first<NextReviewRow>();
     if (review) {
       return {
         status: "work_available" as const,
         work_type: "review" as const,
-        mission: {
-          id: review.mission_id,
-          slug: review.mission_slug,
-          title: review.mission_title,
-          type: review.mission_type
+        quest: {
+          id: review.quest_id,
+          slug: review.quest_slug,
+          title: review.quest_title,
+          goal: review.quest_goal,
+          description: review.quest_description,
         },
-        need: {
-          id: review.need_id,
-          mission_id: review.mission_id,
-          kind: review.kind,
-          title: review.need_title,
-          instructions: review.need_instructions,
-          acceptance_criteria: parseCriteria(review.acceptance_criteria_json),
-          rationale: review.rationale,
-          priority: review.priority
+        challenge: {
+          id: review.challenge_id,
+          title: review.challenge_title,
+          description: review.challenge_description,
         },
         contribution: {
           id: review.id,
           summary: review.summary,
-          result: ContributionResultSchema.parse(JSON.parse(review.result_json)),
-          evidence: EvidenceListSchema.parse(JSON.parse(review.evidence_json))
+          content: review.content,
+          evidence: EvidenceListSchema.parse(JSON.parse(review.evidence_json)),
         },
-        why_now: "This contribution is the oldest eligible item waiting for cross-session review.",
-        done_when: "Check the work and call review_contribution."
+        why_now: "This is the oldest eligible Contribution waiting for cross-session Review.",
+        done_when: "Independently check the work and call openquest_review.",
       };
     }
-    if (mode === "review") {
+    if (input.mode === "review") {
       return {
         status: "no_work_available" as const,
-        message: "No contribution from another session currently needs review.",
-        next_action: "Try get_next_work with mode any later."
       };
     }
   }
+
   let sql =
-    "SELECT n.id, n.mission_id, n.kind, n.title, n.instructions, n.rationale, n.acceptance_criteria_json, n.priority, " +
-    "n.status, n.parent_need_id, n.created_at, n.updated_at, m.slug AS mission_slug, " +
-    "m.title AS mission_title, m.type AS mission_type " +
-    "FROM needs n JOIN missions m ON m.id = n.mission_id WHERE n.status = 'open'";
+    "SELECT h.id, h.quest_id, h.parent_challenge_id, h.title, h.description, h.status, "
+    + "h.created_at, h.updated_at, q.slug AS quest_slug, q.title AS quest_title, "
+    + "q.goal AS quest_goal, q.description AS quest_description "
+    + "FROM challenges h JOIN quests q ON q.id = h.quest_id "
+    + "WHERE h.status = 'open' AND q.status = 'active'";
   const bindings: string[] = [];
-  if (body.mission_id) {
-    sql += " AND m.id = ?";
-    bindings.push(body.mission_id);
+  if (input.quest_id) {
+    sql += " AND q.id = ?";
+    bindings.push(input.quest_id);
   }
-  sql += " ORDER BY n.priority DESC, n.created_at LIMIT 1";
-  const need = await env.DB.prepare(sql).bind(...bindings).first<NextNeedRow>();
-  if (!need) {
+  sql += " ORDER BY h.created_at, h.id LIMIT 1";
+  const challenge = await env.DB.prepare(sql).bind(...bindings).first<NextChallengeRow>();
+  if (!challenge) {
     return {
       status: "no_work_available" as const,
-      message: "No eligible open Need was found.",
-      next_action: "Observe missions or propose a useful Need."
     };
   }
   return {
     status: "work_available" as const,
     work_type: "contribute" as const,
-    mission: {
-      id: need.mission_id,
-      slug: need.mission_slug,
-      title: need.mission_title,
-      type: need.mission_type
+    quest: {
+      id: challenge.quest_id,
+      slug: challenge.quest_slug,
+      title: challenge.quest_title,
+      goal: challenge.quest_goal,
+      description: challenge.quest_description,
     },
-    need: presentWorkNeed(need),
-    why_now: "This is the highest-priority open Need in scope.",
-    done_when: "Meet the acceptance criteria and call submit_contribution."
+    challenge: {
+      id: challenge.id,
+      title: challenge.title,
+      description: challenge.description,
+    },
+    why_now: "This is the oldest open Challenge in scope.",
+    done_when: "Submit useful public work with openquest_submit.",
   };
 }
 
 async function submitContribution(
   env: Env,
-  session: Session,
-  input: z.infer<typeof SubmitContributionInputSchema>
+  identity: ActorIdentity,
+  input: z.infer<typeof SubmitContributionInputSchema>,
 ) {
-  const need = await env.DB.prepare(
-    "SELECT id, status FROM needs WHERE id = ?"
-  )
-    .bind(input.need_id)
-    .first<Pick<NeedRow, "id" | "status">>();
-  if (!need || need.status !== "open") {
-    throw new HttpError(409, "This Need is no longer open. Ask for another useful item.", "need_unavailable");
+  const challenge = await env.DB.prepare("SELECT id, status FROM challenges WHERE id = ?")
+    .bind(input.challenge_id)
+    .first<Pick<ChallengeRow, "id" | "status">>();
+  if (!challenge || challenge.status !== "open") {
+    fail(
+      409,
+      "challenge_unavailable",
+      "This Challenge is no longer open.",
+      nextAction("Find another useful item."),
+    );
   }
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   await env.DB.prepare(
-    "INSERT INTO contributions (id, need_id, session_id, summary, result_json, evidence_json, status, created_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)"
+    "INSERT INTO contributions (id, challenge_id, session_id, summary, content, evidence_json, status, created_at) "
+    + "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
   )
     .bind(
       id,
-      input.need_id,
-      session.id,
+      input.challenge_id,
+      identity.sessionId,
       input.summary,
-      JSON.stringify(input.result),
+      input.content,
       JSON.stringify(input.evidence ?? []),
-      now
+      now,
     )
     .run();
   return {
     status: "submitted" as const,
     contribution_id: id,
-    need_status: "awaiting_review" as const,
-    message: "Contribution recorded. Another browser session must review it.",
-    next_action: {
-      tool: "get_next_work" as const,
-      reason: "This contribution now needs review from a different browser session."
-    }
+    challenge_status: "awaiting_review" as const,
+    message: "Contribution recorded. Another session must review it.",
+    next_action: nextAction("Continue with another useful item."),
   };
 }
 
 async function reviewContribution(
   env: Env,
-  session: Session,
-  input: z.infer<typeof ReviewContributionInputSchema>
+  identity: ActorIdentity,
+  input: z.infer<typeof ReviewContributionInputSchema>,
 ) {
   const contribution = await env.DB.prepare(
-    "SELECT c.id, c.session_id, c.status, n.status AS need_status " +
-      "FROM contributions c JOIN needs n ON n.id = c.need_id WHERE c.id = ?"
+    "SELECT c.id, c.session_id, c.status, h.status AS challenge_status "
+    + "FROM contributions c JOIN challenges h ON h.id = c.challenge_id WHERE c.id = ?",
   )
     .bind(input.contribution_id)
     .first<ReviewContextRow>();
-  if (!contribution) throw new HttpError(404, "Contribution not found.", "not_found");
-  if (contribution.session_id === session.id) {
-    throw new HttpError(403, "A session cannot review its own contribution.", "self_review_forbidden");
+  if (!contribution) fail(404, "not_found", "Contribution not found.");
+  if (identitiesMatch(identity, contribution.session_id)) {
+    fail(
+      403,
+      "self_review_forbidden",
+      "A session cannot Review its own Contribution.",
+      nextAction("Find work created by another session."),
+    );
   }
-  if (contribution.status !== "pending" || contribution.need_status !== "awaiting_review") {
-    throw new HttpError(409, "This contribution is no longer awaiting review.", "conflict");
+  if (contribution.status !== "pending" || contribution.challenge_status !== "awaiting_review") {
+    fail(
+      409,
+      "contribution_unavailable",
+      "This Contribution is no longer awaiting Review.",
+      nextAction("Find another useful item."),
+    );
   }
   const duplicate = await env.DB.prepare(
-    "SELECT id FROM reviews WHERE contribution_id = ? AND reviewer_session_id = ?"
+    "SELECT id FROM reviews WHERE contribution_id = ? AND reviewer_session_id = ?",
   )
-    .bind(input.contribution_id, session.id)
-    .first<{ id: string }>();
-  if (duplicate) throw new HttpError(409, "This session already reviewed the contribution.", "duplicate_review");
-
+    .bind(input.contribution_id, identity.sessionId)
+    .first<IdRow>();
+  if (duplicate) {
+    fail(409, "duplicate_review", "This session already reviewed the Contribution.", nextAction("Find another item."));
+  }
   const reviewId = crypto.randomUUID();
   const now = new Date().toISOString();
-  const supporting = input.verdict === "support";
-  const needStatus = supporting ? "resolved" : "open";
   await env.DB.prepare(
-    "INSERT INTO reviews (id, contribution_id, reviewer_session_id, verdict, reason, evidence_json, created_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO reviews (id, contribution_id, reviewer_session_id, verdict, reason, evidence_json, created_at) "
+    + "VALUES (?, ?, ?, ?, ?, ?, ?)",
   )
     .bind(
       reviewId,
-      contribution.id,
-      session.id,
+      input.contribution_id,
+      identity.sessionId,
       input.verdict,
       input.reason,
       JSON.stringify(input.evidence ?? []),
-      now
+      now,
     )
     .run();
   return {
     status: "review_recorded" as const,
     review_id: reviewId,
     verdict: input.verdict,
-    need_status: needStatus,
-    message: supporting
-      ? "A cross-session supporting review resolved this Need."
-      : "The review reopened this Need for further work."
+    challenge_status: input.verdict === "support" ? "resolved" as const : "open" as const,
   };
 }
 
-async function proposeNeed(
-  env: Env,
-  session: Session,
-  input: z.infer<typeof ProposeNeedInputSchema>
-) {
-  const mission = await env.DB.prepare(
-    "SELECT id FROM missions WHERE id = ? AND status = 'active'"
-  )
-    .bind(input.mission_id)
-    .first<{ id: string }>();
-  if (!mission) throw new HttpError(404, "Active mission not found.", "not_found");
-  if (input.parent_need_id) {
-    const parent = await env.DB.prepare("SELECT id FROM needs WHERE id = ? AND mission_id = ?")
-      .bind(input.parent_need_id, input.mission_id)
-      .first<{ id: string }>();
-    if (!parent) throw new HttpError(400, "Parent Need does not belong to this mission.", "invalid_input");
-  }
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-  await env.DB.prepare(
-    "INSERT INTO needs (id, mission_id, kind, title, instructions, rationale, acceptance_criteria_json, " +
-      "priority, status, parent_need_id, created_by_session_id, created_at, updated_at) " +
-      "VALUES (?, ?, 'question', ?, ?, ?, ?, 3, 'open', ?, ?, ?, ?)"
-  )
-    .bind(
-      id,
-      input.mission_id,
-      input.title,
-      input.instructions,
-      input.rationale,
-      JSON.stringify(input.acceptance_criteria ?? []),
-      input.parent_need_id ?? null,
-      session.id,
-      now,
-      now
-    )
-    .run();
-  return {
-    status: "proposed" as const,
-    need_id: id,
-    mission_id: input.mission_id,
-    need_status: "open" as const,
-    message: "The shared frontier now includes this Need.",
-    next_action: {
-      tool: "get_next_work" as const,
-      reason: "This new Need is now open for a contribution."
-    }
-  };
+async function parseBody<Output>(request: Request, schema: z.ZodType<Output>): Promise<Output> {
+  return schema.parse(await request.json());
+}
+
+async function writeIdentity(request: Request, env: Env): Promise<ActorIdentity> {
+  const identity = await ensureIdentity(request, env);
+  await enforceWriteLimit(request, env, identity);
+  return identity;
 }
 
 async function handleApi(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const session = await ensureSession(request, env);
+
   if (request.method === "GET" && url.pathname === "/api/world") {
     const limit = worldLimitSchema.parse(url.searchParams.get("limit") ?? undefined);
-    return json(await world(env, url.searchParams.get("mission_id") ?? undefined, limit), 200, session);
+    const questId = identifierQuerySchema.parse(url.searchParams.get("quest_id") ?? undefined);
+    return json(await world(env, questId, limit));
   }
-  const missionMatch = /^\/api\/missions\/([^/]+)$/.exec(url.pathname);
-  if (request.method === "GET" && missionMatch) {
-    return json(await missionDetail(env, decodeURIComponent(missionMatch[1])), 200, session);
+
+  const questMatch = /^\/api\/quests\/([^/]+)$/.exec(url.pathname);
+  if (request.method === "GET" && questMatch) {
+    return json(await questDetail(env, decodeURIComponent(questMatch[1])));
   }
+
   const contributionMatch = /^\/api\/contributions\/([^/]+)$/.exec(url.pathname);
   if (request.method === "GET" && contributionMatch) {
-    return json(await contributionDetail(env, decodeURIComponent(contributionMatch[1])), 200, session);
+    return json(await contributionDetail(env, decodeURIComponent(contributionMatch[1])));
   }
-  const writePath = ["/api/contributions", "/api/reviews", "/api/needs"].includes(url.pathname);
-  if (request.method === "POST" && writePath) await enforceWriteLimit(request, env, session);
+
   if (request.method === "POST" && url.pathname === "/api/work/next") {
-    const input = GetNextWorkInputSchema.parse(await request.json());
-    return json(await nextWork(env, session, input), 200, session);
+    const input = await parseBody(request, GetNextWorkInputSchema);
+    return json(await nextWork(env, await readIdentity(request, env), input));
   }
+
+  if (request.method === "POST" && url.pathname === "/api/quests") {
+    const input = await parseBody(request, CreateQuestInputSchema);
+    const identity = await writeIdentity(request, env);
+    return json(await createQuest(env, identity, input), 201, identity);
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/challenges") {
+    const input = await parseBody(request, CreateChallengeInputSchema);
+    const identity = await writeIdentity(request, env);
+    return json(await createChallenge(env, identity, input), 201, identity);
+  }
+
   if (request.method === "POST" && url.pathname === "/api/contributions") {
-    const input = SubmitContributionInputSchema.parse(await request.json());
-    return json(await submitContribution(env, session, input), 201, session);
+    const input = await parseBody(request, SubmitContributionInputSchema);
+    const identity = await writeIdentity(request, env);
+    return json(await submitContribution(env, identity, input), 201, identity);
   }
+
   if (request.method === "POST" && url.pathname === "/api/reviews") {
-    const input = ReviewContributionInputSchema.parse(await request.json());
-    return json(await reviewContribution(env, session, input), 201, session);
+    const input = await parseBody(request, ReviewContributionInputSchema);
+    const identity = await writeIdentity(request, env);
+    return json(await reviewContribution(env, identity, input), 201, identity);
   }
-  if (request.method === "POST" && url.pathname === "/api/needs") {
-    const input = ProposeNeedInputSchema.parse(await request.json());
-    return json(await proposeNeed(env, session, input), 201, session);
-  }
-  throw new HttpError(404, "API route not found.");
+
+  fail(404, "not_found", "API route not found.");
 }
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   try {
     return await handleApi(request, env);
   } catch (cause: unknown) {
-    if (cause instanceof HttpError) {
-      return json({ status: cause.code, message: cause.message }, cause.status);
-    }
+    if (cause instanceof HttpError) return json(cause.payload, cause.httpStatus);
     if (cause instanceof z.ZodError) {
-      return json(
-        { status: "invalid_input", message: z.prettifyError(cause) },
-        400
-      );
+      return json({ status: "invalid_input", message: z.prettifyError(cause) }, 400);
     }
-    console.error("OpenShare request failed", cause);
-    return json({ status: "error", message: "OpenShare could not complete the request." }, 500);
+    console.error("OpenQuest request failed", cause);
+    return json({ status: "error", message: "OpenQuest could not complete the request." }, 500);
   }
 }
 
 export default {
   fetch(request, env) {
     return handleRequest(request, env);
-  }
+  },
 } satisfies ExportedHandler<Env>;
