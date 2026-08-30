@@ -9,18 +9,18 @@
     "bun": ">=1.4.0"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
-    "serve": "bun run build && bun run migrate:serve && OPENSHARE_PERSIST_PATH=.runtime/state bun run preview",
-    "deploy": "bun run build && wrangler deploy",
+    "dev": "bun run --bun vite --configLoader native",
+    "build": "bun run --bun tsc --noEmit && bun run --bun vite build --configLoader native",
+    "preview": "bun run --bun vite preview --configLoader native --host 127.0.0.1 --port 4173 --strictPort",
+    "serve": "bun run migrate:serve && OPENSHARE_PERSIST_PATH=.runtime/state bun run preview",
+    "deploy": "bun run build && bun run --bun wrangler deploy",
     "test": "bun test tests/contracts.test.ts",
     "test:watch": "bun test --watch tests/contracts.test.ts",
-    "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui",
-    "migrate:local": "wrangler d1 migrations apply openshare --local",
-    "migrate:serve": "wrangler d1 migrations apply openshare --local --persist-to .runtime/state",
-    "migrate:remote": "wrangler d1 migrations apply openshare --remote"
+    "e2e": "bun run --bun playwright test",
+    "e2e:ui": "bun run --bun playwright test --ui",
+    "migrate:local": "bun run --bun wrangler d1 migrations apply openshare --local",
+    "migrate:serve": "bun run --bun wrangler d1 migrations apply openshare --local --persist-to .runtime/state",
+    "migrate:remote": "bun run --bun wrangler d1 migrations apply openshare --remote"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.8.1",

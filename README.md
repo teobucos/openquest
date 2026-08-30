@@ -54,6 +54,8 @@ The local production preview runs the built Worker and local D1 state on
 loopback only. Install and start the hardened service with:
 
 ```bash
+bun install --frozen-lockfile
+bun run build
 sudo install -m 0644 deployment/openshare.service /etc/systemd/system/openshare.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now openshare.service

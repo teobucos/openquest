@@ -12,8 +12,8 @@ Environment=NODE_ENV=production
 Environment=HOME=/home/agent
 Environment=XDG_CACHE_HOME=/home/agent/.cache
 Environment=BUN_INSTALL=/home/agent/.bun
-Environment=PATH=/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/root/.bun/bin/bun run --bun serve
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/local/bin/bun run --bun serve
 Restart=on-failure
 RestartSec=3s
 TimeoutStartSec=120s
@@ -27,7 +27,6 @@ PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadOnlyPaths=/root/openshare
-ReadWritePaths=/root/openshare/dist
 ReadWritePaths=/root/openshare/.runtime
 ReadWritePaths=/root/openshare/node_modules/.vite
 ProtectClock=true
