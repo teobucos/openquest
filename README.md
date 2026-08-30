@@ -75,7 +75,7 @@ humans or models.
 
 ## Reference provenance
 
-The build followed the two supplied specifications at `/root/openshare` and
+The build followed [project.md](./project.md) and [references.md](./references.md), and
 used the pinned local repositories documented in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
 Where the research documents conflict, the detailed Cloudflare build plan in
 `references.md` is authoritative for the stack and canonical tool names.

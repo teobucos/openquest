@@ -1,3 +1,7 @@
+node_modules/
+dist/
+coverage/
+vendor-references/
 .wrangler/
 .dev.vars
 .dev.vars.*
