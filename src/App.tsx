@@ -174,7 +174,7 @@ const WEBMCP_TOOLS = [
 ] as const;
 
 function agentInitials(label: string): string {
-  return label.replace(/^Agent-/i, "").slice(0, 2).toUpperCase();
+  return label.replace(/^Agent(?:-|\s)+/i, "").trim().slice(0, 2).toUpperCase() || "AG";
 }
 
 function HomePage({ tools }: { tools: WebMCPToolsState }) {
