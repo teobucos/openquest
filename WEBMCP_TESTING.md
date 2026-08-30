@@ -96,6 +96,10 @@ Expected annotations are:
   human-readable slug in a `/q/{slug}` URL.
 - `observe.limit` bounds the active Quest list and recent activity list. Scoped
   Challenge previews have a separate fixed bound of 100.
+- Unscoped observation includes bounded `recent_agents` and work queues plus a
+  `freshness` server timestamp and event cursor. Recent agents summarize public
+  mutation activity in the ten-minute activity window; they are not a live
+  presence or work-assignment claim.
 - Tool calls can fulfill with structured domain failures. Always inspect the
   returned `status` before continuing.
 - Contribution content must contain at least one non-whitespace character.
