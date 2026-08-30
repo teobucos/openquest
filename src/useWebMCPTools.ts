@@ -20,6 +20,7 @@ import {
   type ProposeOutput,
   type ProposeResponse,
 } from "./contracts";
+import { notifyOpenQuestChanged } from "./useRemoteData";
 
 const readAnnotations = {
   readOnlyHint: true,
@@ -37,10 +38,6 @@ export interface WebMCPToolsState {
   supported: boolean;
 }
 
-function notifyChanged(): void {
-  window.dispatchEvent(new Event("openquest:changed"));
-}
-
 async function executeTool<Input, Result>(
   input: Input,
   execute: (parsed: Input, signal: AbortSignal) => Promise<Result>,
@@ -50,7 +47,7 @@ async function executeTool<Input, Result>(
 ): Promise<Result> {
   const signal = AbortSignal.any([controllerSignal, callSignal]);
   const result = await execute(input, signal);
-  if (mutation) notifyChanged();
+  if (mutation) await notifyOpenQuestChanged();
   return result;
 }
 
