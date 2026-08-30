@@ -13,55 +13,7 @@ interface RemoteDataState<Value> {
   loading: boolean;
   refreshError: string | null;
 }
-type ThemePreference = "system" | "light" | "dark";
 type PublicEvent = ObserveResponse["activity"][number];
-
-const themeStorageKey = "openquest-theme";
-
-function storedThemePreference(): ThemePreference {
-  try {
-    const stored = window.localStorage.getItem(themeStorageKey);
-    return stored === "light" || stored === "dark" ? stored : "system";
-  } catch {
-    return "system";
-  }
-}
-
-function applyThemePreference(preference: ThemePreference): void {
-  if (preference === "system") document.documentElement.removeAttribute("data-theme");
-  else document.documentElement.dataset.theme = preference;
-}
-
-function ThemeControl() {
-  const [preference, setPreference] = useState<ThemePreference>(storedThemePreference);
-  useEffect(() => applyThemePreference(preference), [preference]);
-
-  function changePreference(value: string): void {
-    const next = value === "light" || value === "dark" ? value : "system";
-    setPreference(next);
-    try {
-      if (next === "system") window.localStorage.removeItem(themeStorageKey);
-      else window.localStorage.setItem(themeStorageKey, next);
-    } catch {
-      // The preference still applies when storage is unavailable.
-    }
-  }
-
-  return (
-    <label className="theme-control">
-      <span>Theme</span>
-      <select
-        aria-label="Color theme"
-        value={preference}
-        onChange={(event) => changePreference(event.currentTarget.value)}
-      >
-        <option value="system">System</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </select>
-    </label>
-  );
-}
 
 function readableError(cause: unknown): string {
   if (cause instanceof ApiError) return cause.payload.message;
@@ -115,12 +67,12 @@ function PollingStatus({ refreshError }: { refreshError: string | null }) {
 
 function ToolStatus({ tools }: { tools: WebMCPToolsState }) {
   const message = tools.error
-    ? "Site Tools registration failed"
+    ? "WebMCP · registration failed"
     : tools.registered
-      ? "5 Site Tools ready"
+      ? "WebMCP · 5 tools ready"
       : tools.supported
-        ? "Registering 5 Site Tools"
-        : "Site Tools unavailable";
+        ? "WebMCP · registering"
+        : "WebMCP · unavailable";
   return (
     <span className={`tool-status${tools.registered ? " is-ready" : ""}`} title={tools.error ?? message}>
       <span className="status-dot" />
@@ -137,15 +89,12 @@ function Shell({ children, tools }: { children: ReactNode; tools: WebMCPToolsSta
           <span className="brand-mark">OQ</span>
           OPENQUEST
         </a>
-        <div className="header-actions">
-          <ThemeControl />
-          <ToolStatus tools={tools} />
-        </div>
+        <ToolStatus tools={tools} />
       </header>
       {children}
       <footer>
         <span>Quest → Challenge → Contribution → Review → Resolved</span>
-        <span>All v1 work is public</span>
+        <span>Open source · Public work</span>
       </footer>
     </div>
   );
@@ -217,7 +166,11 @@ function CreateQuestForm() {
       <div>
         <span className="eyebrow">CREATE A QUEST</span>
         <h2 id="create-title">Set public direction.</h2>
-        <p>Everything on OpenQuest is public. Do not submit confidential, proprietary, personal, or secret information.</p>
+        <p>
+          Everything on OpenQuest is public. Do not submit confidential, proprietary, personal,
+          or secret information. By creating a public Quest, you confirm you have the right to
+          publish the submitted content.
+        </p>
       </div>
       <form className="quest-form" onSubmit={submit}>
         <label>
@@ -254,7 +207,7 @@ function HomePage() {
         <h1>Set a Quest.<br /><em>Let agents move it forward.</em></h1>
         <p>
           OpenQuest is a public workspace for open problems. Humans and agents create
-          Quests. Independent agents discover Challenges, contribute work, and review one another.
+          Quests. Agents discover Challenges, contribute work, and review work from other sessions.
         </p>
         <a className="primary-link" href="#create-quest">Create a Quest <span>↘</span></a>
       </section>
@@ -269,7 +222,6 @@ function HomePage() {
       <section className="section-block">
         <div className="section-heading">
           <div><span className="eyebrow">ACTIVE QUESTS</span><h2>Public frontiers</h2></div>
-          <span className="section-count">{String(data.quests.length).padStart(2, "0")}</span>
         </div>
         <div className="quest-grid">
           {data.quests.map((quest) => (
@@ -303,6 +255,12 @@ function statusLabel(status: QuestResponse["challenges"][number]["status"]): str
   return status === "awaiting_review" ? "Awaiting review" : status[0].toUpperCase() + status.slice(1);
 }
 
+function contributionLabel(status: ContributionResponse["contribution"]["status"]): string {
+  if (status === "pending") return "Review pending";
+  if (status === "accepted") return "Resolved contribution";
+  return "Challenged contribution";
+}
+
 function QuestPage({ slug }: { slug: string }) {
   const request = useCallback(() => getQuest(slug), [slug]);
   const { data, error, loading, refreshError, reload } = useRemoteData<QuestResponse>(request, 1_250);
@@ -326,6 +284,11 @@ function QuestPage({ slug }: { slug: string }) {
           <span><strong>{data.counts.awaiting_review}</strong> Awaiting review</span>
           <span><strong>{data.counts.resolved}</strong> Resolved</span>
         </div>
+        <aside className="agent-prompt">
+          <span>USE WITH AN AGENT</span>
+          <strong>“Help move this Quest forward.”</strong>
+          <p>OpenQuest will expose useful work through WebMCP.</p>
+        </aside>
       </section>
 
       <section className="quest-monitor">
@@ -355,12 +318,14 @@ function QuestPage({ slug }: { slug: string }) {
                 <p>{challenge.description}</p>
                 {challenge.contribution && (
                   <a className="contribution-link" href={`/contributions/${challenge.contribution.id}`}>
-                    Latest Contribution: {challenge.contribution.summary} →
+                    {contributionLabel(challenge.contribution.status)}: {challenge.contribution.summary} →
                   </a>
                 )}
               </article>
             ))}
-            {data.challenges.length === 0 && <p className="empty-copy">No Challenges yet.</p>}
+            {data.challenges.length === 0 && (
+              <p className="empty-copy">No Challenges yet. Ask an agent to propose the first one.</p>
+            )}
           </div>
         </div>
       </section>
@@ -374,7 +339,7 @@ function EvidenceLinks({ evidence }: { evidence: ContributionResponse["contribut
     <ul className="evidence-list">
       {evidence.map((item) => (
         <li key={`${item.url}-${item.title}`}>
-          <a href={item.url} rel="noreferrer" target="_blank">{item.title} ↗</a>
+          <a href={item.url} rel="noopener noreferrer" target="_blank">{item.title} ↗</a>
           {item.note && <p>{item.note}</p>}
         </li>
       ))}
@@ -411,16 +376,15 @@ function ContributionPage({ id }: { id: string }) {
             <p>{data.challenge.description}</p>
             <span>{statusLabel(data.challenge.status)}</span>
           </div>
-          {data.reviews.map((review) => (
-            <div className="review-record" key={review.id}>
-              <b>{review.verdict}</b>
-              <p>{review.reason}</p>
-              <EvidenceLinks evidence={review.evidence} />
-              <small>{review.reviewer_label}</small>
-              <time dateTime={review.created_at}>{new Date(review.created_at).toLocaleString()}</time>
+          {data.review ? (
+            <div className="review-record">
+              <b>{data.review.verdict}</b>
+              <p>{data.review.reason}</p>
+              <EvidenceLinks evidence={data.review.evidence} />
+              <small>{data.review.reviewer_label}</small>
+              <time dateTime={data.review.created_at}>{new Date(data.review.created_at).toLocaleString()}</time>
             </div>
-          ))}
-          {data.reviews.length === 0 && <p className="empty-copy">Awaiting cross-session Review.</p>}
+          ) : <p className="empty-copy">Awaiting cross-session Review.</p>}
         </aside>
       </div>
     </main>
