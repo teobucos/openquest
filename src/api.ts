@@ -2,35 +2,36 @@ import { z } from "zod";
 import {
   ApiErrorResponseSchema,
   ContributionResponseSchema,
+  CreateChallengeResponseSchema,
+  CreateQuestResponseSchema,
   GetNextWorkResponseSchema,
-  MissionResponseSchema,
-  ObserveMissionsResponseSchema,
-  ProposeNeedResponseSchema,
+  ObserveResponseSchema,
+  QuestResponseSchema,
   ReviewContributionResponseSchema,
   SubmitContributionResponseSchema,
   type ApiErrorResponse,
   type ContributionResponse,
+  type CreateChallengeInput,
+  type CreateChallengeResponse,
+  type CreateQuestInput,
+  type CreateQuestResponse,
   type GetNextWorkInput,
   type GetNextWorkResponse,
-  type MissionResponse,
-  type ObserveMissionsInput,
-  type ObserveMissionsResponse,
-  type ProposeNeedInput,
-  type ProposeNeedResponse,
+  type ObserveInput,
+  type ObserveResponse,
+  type QuestResponse,
   type ReviewContributionInput,
   type ReviewContributionResponse,
   type SubmitContributionInput,
   type SubmitContributionResponse,
-  type WorldResponse,
 } from "./contracts";
 
 export class ApiError extends Error {
   public constructor(
-    public readonly status: number,
-    message: string,
-    public readonly code?: ApiErrorResponse["status"],
+    public readonly httpStatus: number,
+    public readonly payload: ApiErrorResponse,
   ) {
-    super(message);
+    super(payload.message);
     this.name = "ApiError";
   }
 }
@@ -41,11 +42,11 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
-async function request<Response>(
+async function request<ResponseValue>(
   path: string,
-  schema: z.ZodType<Response>,
+  schema: z.ZodType<ResponseValue>,
   options: RequestOptions = {},
-): Promise<Response> {
+): Promise<ResponseValue> {
   const response = await fetch(path, {
     body: options.body,
     credentials: "same-origin",
@@ -53,50 +54,69 @@ async function request<Response>(
     method: options.method ?? "GET",
     signal: options.signal,
   });
-
+  const body = await response.json();
   if (!response.ok) {
-    const parsed = ApiErrorResponseSchema.safeParse(await response.json());
+    const parsed = ApiErrorResponseSchema.safeParse(body);
     throw new ApiError(
       response.status,
       parsed.success
-        ? parsed.data.message
-        : `OpenShare request failed with HTTP ${response.status}.`,
-      parsed.success ? parsed.data.status : undefined,
+        ? parsed.data
+        : { status: "error", message: `OpenQuest request failed with HTTP ${response.status}.` },
     );
   }
-
-  return schema.parse(await response.json());
+  return schema.parse(body);
 }
 
 function postBody<Value>(value: Value, signal?: AbortSignal): RequestOptions {
   return { body: JSON.stringify(value), method: "POST", signal };
 }
 
-function missionQuery(missionId: string | undefined, limit?: number): string {
+function observeQuery(questId: string | undefined, limit?: number): string {
   const parameters = new URLSearchParams();
-  if (missionId) parameters.set("mission_id", missionId);
+  if (questId) parameters.set("quest_id", questId);
   if (limit) parameters.set("limit", String(limit));
   const query = parameters.toString();
-  return query ? "/api/world?" + query : "/api/world";
+  return query ? `/api/world?${query}` : "/api/world";
 }
 
-export function getWorld(missionId?: string, signal?: AbortSignal): Promise<WorldResponse> {
-  return request(missionQuery(missionId), ObserveMissionsResponseSchema, { signal });
+export function getQuest(slug: string, signal?: AbortSignal): Promise<QuestResponse> {
+  return request(`/api/quests/${encodeURIComponent(slug)}`, QuestResponseSchema, { signal });
 }
 
-export function getMission(slug: string, signal?: AbortSignal): Promise<MissionResponse> {
-  return request(`/api/missions/${encodeURIComponent(slug)}`, MissionResponseSchema, { signal });
-}
-
-export function getContribution(id: string, signal?: AbortSignal): Promise<ContributionResponse> {
-  return request(`/api/contributions/${encodeURIComponent(id)}`, ContributionResponseSchema, { signal });
-}
-
-export function observeMissions(
-  input: ObserveMissionsInput,
+export function getContribution(
+  id: string,
   signal?: AbortSignal,
-): Promise<ObserveMissionsResponse> {
-  return request(missionQuery(input.mission_id, input.limit), ObserveMissionsResponseSchema, { signal });
+): Promise<ContributionResponse> {
+  return request(
+    `/api/contributions/${encodeURIComponent(id)}`,
+    ContributionResponseSchema,
+    { signal },
+  );
+}
+
+export function observe(
+  input: ObserveInput = {},
+  signal?: AbortSignal,
+): Promise<ObserveResponse> {
+  return request(
+    observeQuery(input.quest_id, input.limit),
+    ObserveResponseSchema,
+    { signal },
+  );
+}
+
+export function createQuest(
+  input: CreateQuestInput,
+  signal?: AbortSignal,
+): Promise<CreateQuestResponse> {
+  return request("/api/quests", CreateQuestResponseSchema, postBody(input, signal));
+}
+
+export function createChallenge(
+  input: CreateChallengeInput,
+  signal?: AbortSignal,
+): Promise<CreateChallengeResponse> {
+  return request("/api/challenges", CreateChallengeResponseSchema, postBody(input, signal));
 }
 
 export function getNextWork(
@@ -121,12 +141,9 @@ export function reviewContribution(
   input: ReviewContributionInput,
   signal?: AbortSignal,
 ): Promise<ReviewContributionResponse> {
-  return request("/api/reviews", ReviewContributionResponseSchema, postBody(input, signal));
-}
-
-export function proposeNeed(
-  input: ProposeNeedInput,
-  signal?: AbortSignal,
-): Promise<ProposeNeedResponse> {
-  return request("/api/needs", ProposeNeedResponseSchema, postBody(input, signal));
+  return request(
+    "/api/reviews",
+    ReviewContributionResponseSchema,
+    postBody(input, signal),
+  );
 }

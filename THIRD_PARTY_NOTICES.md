@@ -1,17 +1,17 @@
 # Third-party notices
 
-OpenShare was implemented with reference to these locally pinned projects:
+OpenQuest's direct runtime dependencies, as resolved by `bun.lock`, are:
 
-- Cloudflare WebMCP React Starter, commit `8ffb3ad14a0aed72b047b8968981f10b141c700b`, MIT License, Copyright Jilles Soeters.
-- GoogleChromeLabs `use-webmcp-tool`, commit `4a9505e7dc2e82a8468d7510dde264915bc7d394`, Apache License 2.0, Copyright Google LLC.
-- GoogleChromeLabs `webmcp-tools`, commit `97e6fbe83fc3f2e3c6df2198b962dd2ad59cb924`, Apache License 2.0, Copyright Google LLC.
-- Thinkroom, commit `259fad051e62b0f03bcf34b1cd3dda1102e4ed28`, MIT License, Copyright Kieran Klaassen.
-- React and ReactDOM 19.2.8, MIT License, Copyright Meta Platforms, Inc. and affiliates.
-- Zod 4.4.3, MIT License, Copyright Colin McDonnell.
+- React and ReactDOM 19.2.8, MIT, Copyright Meta Platforms, Inc. and affiliates.
+- Zod 4.5.4, MIT, Copyright Colin McDonnell.
 
-The WebMCP registration lifecycle, schema generation, D1 binding, append-only
-activity, and browser evaluation approaches were adapted from these sources.
-The complete MIT notices for adapted patterns and bundled runtime dependencies
-are distributed in [`licenses/`](./licenses). Apache-2.0 reference material is
-covered by the complete repository [LICENSE](./LICENSE); upstream copyright
-notices above are retained here.
+Direct development tooling resolves to the Cloudflare Vite plugin 1.54.2
+(MIT), React Vite plugin 4.7.0 (MIT), Vite 6.4.3 (MIT), TypeScript 5.9.3
+(Apache-2.0), Wrangler 4.127.1 (MIT OR Apache-2.0), Cloudflare Workers types
+4.20260702.1 (MIT OR Apache-2.0), WebMCP types 0.1.5 (MIT), Bun types 1.4.0 (MIT),
+React types 19.2.18 (MIT), ReactDOM types 19.2.5 (MIT), and Playwright 1.62.1
+(Apache-2.0). Transitive dependencies are recorded in `bun.lock`.
+
+The repository retains complete notices in [`licenses/`](./licenses) for the
+runtime libraries. Apache-2.0 material is covered by the repository
+[LICENSE](./LICENSE), with upstream copyright notices retained where required.

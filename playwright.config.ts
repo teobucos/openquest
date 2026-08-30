@@ -6,7 +6,7 @@ export default defineConfig({
   retries: import.meta.env.CI ? 2 : 0,
   workers: 1,
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: "http://127.0.0.1:4174",
     trace: "on-first-retry",
   },
   projects: [
@@ -16,9 +16,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bun run build && bun run migrate:local && bun run preview",
-    url: "http://127.0.0.1:4173",
-    // Always apply the non-destructive migration plan and exercise a fresh Worker process.
+    command: "bun run build && rm -rf .wrangler/state .runtime/state && bun run migrate:local && bun run --bun vite preview --configLoader native --host 127.0.0.1 --port 4174 --strictPort",
+    url: "http://127.0.0.1:4174",
+    // The v1 database is disposable; each run verifies the rewritten initial migration.
     reuseExistingServer: false,
     timeout: 120_000,
   },
