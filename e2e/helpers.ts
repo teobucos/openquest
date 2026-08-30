@@ -1,6 +1,8 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import type { ZodType } from "zod";
+import { ApiErrorResponseSchema } from "../src/contracts";
 import type {
+  ApiErrorResponse,
   CreateChallengeResponse,
   CreateQuestResponse,
   GetNextWorkInput,
@@ -30,6 +32,7 @@ export type ToolInvocation = {
 }[keyof ToolInputs];
 
 type WebMcpToolValue =
+  | ApiErrorResponse
   | CreateChallengeResponse
   | CreateQuestResponse
   | GetNextWorkResponse
@@ -48,6 +51,7 @@ export type WebMcpCall =
     };
 
 export interface RegisteredTool {
+  readonly annotations: WebMCP.ToolAnnotations | undefined;
   readonly description: string;
   readonly inputSchema: WebMCP.ModelContextTool["inputSchema"];
   readonly name: ToolInvocation["name"];
@@ -61,7 +65,7 @@ interface InvocationOptions {
 declare global {
   interface Window {
     __openquestWebMcp: {
-      abortRegistrations(): void;
+      changeNotifications(): number;
       invoke(
         name: ToolInvocation["name"],
         input: ToolInvocation["input"],
@@ -74,27 +78,44 @@ declare global {
 
 const fakeWebMcpRuntime = `
   (() => {
+    let changeNotifications = 0;
     const tools = new Map();
-    const registrationControllers = [];
     const modelContext = {
-      registerTool(tool, options) {
+      async registerTool(tool, options) {
+        if (tools.has(tool.name)) {
+          throw new DOMException("A tool with this name is already registered.", "InvalidStateError");
+        }
+        if (tool.name.length === 0) {
+          throw new TypeError("Tool name must not be empty.");
+        }
+        if (tool.description.length === 0) {
+          throw new TypeError("Tool description must not be empty.");
+        }
+        if (tool.name.length > 128) {
+          throw new TypeError("Tool name must not exceed 128 characters.");
+        }
+        if (!/^[A-Za-z0-9_.-]+$/.test(tool.name)) {
+          throw new TypeError("Tool name contains an unsupported character.");
+        }
+        JSON.stringify(tool.inputSchema);
+        if (options && options.signal && options.signal.aborted) return;
         tools.set(tool.name, tool);
         if (options && options.signal) {
-          registrationControllers.push(options.signal);
-          options.signal.addEventListener("abort", () => tools.delete(tool.name), { once: true });
+          options.signal.addEventListener("abort", () => {
+            if (tools.get(tool.name) === tool) tools.delete(tool.name);
+          }, { once: true });
         }
-        return Promise.resolve();
       },
     };
     Object.defineProperty(document, "modelContext", { configurable: true, value: modelContext });
+    window.addEventListener("openquest:changed", () => {
+      changeNotifications += 1;
+    });
     window.__openquestWebMcp = {
-      abortRegistrations() {
-        for (const signal of registrationControllers) {
-          signal.dispatchEvent(new Event("abort"));
-        }
-      },
+      changeNotifications: () => changeNotifications,
       tools: () => Array.from(tools.values())
         .map((tool) => ({
+          annotations: tool.annotations,
           description: tool.description,
           inputSchema: tool.inputSchema,
           name: tool.name,
@@ -130,12 +151,6 @@ export async function callTool(page: Page, invocation: ToolInvocation): Promise<
   }, invocation);
 }
 
-export async function cancelledTool(page: Page, invocation: ToolInvocation): Promise<WebMcpCall> {
-  return page.evaluate<WebMcpCall, ToolInvocation>((request) => {
-    return window.__openquestWebMcp.invoke(request.name, request.input, { abort: true });
-  }, invocation);
-}
-
 export async function successfulTool<Result>(
   page: Page,
   invocation: ToolInvocation,
@@ -147,10 +162,25 @@ export async function successfulTool<Result>(
   return schema.parse(call.value);
 }
 
-export async function failedTool(page: Page, invocation: ToolInvocation): Promise<string> {
+export async function domainErrorTool(
+  page: Page,
+  invocation: ToolInvocation,
+  status?: ApiErrorResponse["status"],
+): Promise<ApiErrorResponse> {
   const call = await callTool(page, invocation);
+  expect(call).toMatchObject({ ok: true });
+  if (!call.ok) throw new Error(call.error);
+  const error = ApiErrorResponseSchema.parse(call.value);
+  if (status) expect(error.status).toBe(status);
+  return error;
+}
+
+export async function cancelledTool(page: Page, invocation: ToolInvocation): Promise<string> {
+  const call = await page.evaluate<WebMcpCall, ToolInvocation>((request) => {
+    return window.__openquestWebMcp.invoke(request.name, request.input, { abort: true });
+  }, invocation);
   expect(call).toMatchObject({ ok: false });
-  if (call.ok) throw new Error("Expected WebMCP tool execution to reject.");
+  if (call.ok) throw new Error("Expected cancelled WebMCP execution to reject.");
   return call.error;
 }
 
@@ -158,8 +188,8 @@ export async function registeredTools(page: Page): Promise<RegisteredTool[]> {
   return page.evaluate(() => window.__openquestWebMcp.tools());
 }
 
-export async function abortRegisteredTools(page: Page): Promise<void> {
-  await page.evaluate(() => window.__openquestWebMcp.abortRegistrations());
+export async function mutationNotifications(page: Page): Promise<number> {
+  return page.evaluate(() => window.__openquestWebMcp.changeNotifications());
 }
 
 export function challengeRow(page: Page, title: string) {
