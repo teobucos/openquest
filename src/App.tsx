@@ -12,8 +12,8 @@ type PublicEvent = ObserveResponse["activity"][number];
 
 function PollingStatus({ refreshError }: { refreshError: string | null }) {
   return refreshError
-    ? <span className="live-pulse is-degraded" title={refreshError}>Connection issue</span>
-    : <span className="live-pulse">POLLING LIVE</span>;
+    ? <span className="live-pulse is-degraded" role="status" title={refreshError}>Connection issue</span>
+    : <span className="live-pulse" role="status">POLLING LIVE</span>;
 }
 
 function ToolStatus({ tools }: { tools: WebMCPToolsState }) {
@@ -235,7 +235,7 @@ function HomePage({ tools }: { tools: WebMCPToolsState }) {
                   <div className="quest-queue-copy">
                     <h3>{quest.title}</h3>
                     <p>{quest.goal}</p>
-                    <div className="queue-meter" aria-label={`${completion}% resolved`}><span style={{ width: `${completion}%` }} /></div>
+                    <div className="queue-meter" role="progressbar" aria-label="Quest completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={completion}><span style={{ width: `${completion}%` }} /></div>
                     <div className="queue-counts"><span>{quest.counts.open} OPEN</span><span>{quest.counts.awaiting_review} REVIEW</span><span>{quest.counts.resolved} DONE</span></div>
                   </div>
                   <div className="quest-queue-state"><b>{quest.active_agents}</b><span>ACTIVE</span></div>

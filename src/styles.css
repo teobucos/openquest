@@ -215,7 +215,7 @@ body { background: var(--canvas); }
   width: 100%;
   max-width: none;
   height: calc(100dvh - 56px);
-  min-height: 680px;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   padding: 0 8px 8px;
@@ -401,4 +401,74 @@ footer { min-height: 74px; }
   .contributor-panel { height: 320px; }
   .webmcp-panel, .create-panel { border-top: 1px solid var(--line); }
   .quest-copy, .detail-grid { grid-template-columns: 1fr; }
+}
+/* Validation polish */
+html, body, #root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+.app-shell,
+.command-center,
+.command-summary,
+.telemetry-rail,
+.command-grid,
+.ops-panel,
+.command-rail {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.command-summary > *,
+.command-actions > *,
+.telemetry-cell,
+.panel-heading > *,
+.work-lanes > *,
+.tool-list > * {
+  min-width: 0;
+}
+.panel-heading h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.create-panel summary:focus-visible {
+  outline: 2px solid var(--acid);
+  outline-offset: -3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .site-header,
+  .header-operations,
+  .command-summary,
+  .command-actions,
+  .telemetry-rail,
+  .command-grid,
+  .command-grid > *,
+  .command-rail,
+  .command-rail > *,
+  .pipeline-flow {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .command-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    column-gap: 14px;
+    row-gap: 8px;
+  }
+  .compact-action { margin-left: auto; }
+  .telemetry-cell strong { font-size: 24px; }
+  .pipeline-flow { overflow-x: auto; overscroll-behavior-inline: contain; }
 }
