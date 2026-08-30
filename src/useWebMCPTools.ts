@@ -16,6 +16,7 @@ import {
   ReviewContributionInputSchema,
   SubmitContributionInputSchema,
   WebMCPToolInputJsonSchemas,
+  type ApiErrorResponse,
   type ProposeOutput,
   type ProposeResponse,
 } from "./contracts";
@@ -27,28 +28,13 @@ const readAnnotations = {
 
 const writeAnnotations = {
   readOnlyHint: false,
-  untrustedContentHint: true,
+  untrustedContentHint: false,
 } as const;
 
 export interface WebMCPToolsState {
   error: string | null;
   registered: boolean;
   supported: boolean;
-}
-
-function toolError(cause: unknown): Error {
-  if (cause instanceof ApiError) {
-    const next = cause.payload.next_action
-      ? ` Next: ${cause.payload.next_action.tool} — ${cause.payload.next_action.reason}`
-      : "";
-    return new Error(`[${cause.payload.status}] ${cause.payload.message}${next}`);
-  }
-  if (cause instanceof z.ZodError) {
-    return new Error(`[invalid_input] ${z.prettifyError(cause)}`);
-  }
-  return cause instanceof Error
-    ? cause
-    : new Error("OpenQuest could not complete the action.");
 }
 
 function notifyChanged(): void {
@@ -74,17 +60,34 @@ function bindTool<Input, Result>(
   controllerSignal: AbortSignal,
   mutation = false,
 ): WebMCP.ToolExecuteCallback {
-  return async (input, { signal }) => {
+  return async (input, options) => {
+    const callSignal = options?.signal ?? controllerSignal;
+    controllerSignal.throwIfAborted();
+    callSignal.throwIfAborted();
+    let parsed: Input;
+    try {
+      parsed = schema.parse(input);
+    } catch (cause: unknown) {
+      if (cause instanceof z.ZodError) {
+        return {
+          message: z.prettifyError(cause).slice(0, 500),
+          status: "invalid_input",
+        } satisfies ApiErrorResponse;
+      }
+      throw cause;
+    }
     try {
       return await executeTool(
-        schema.parse(input),
+        parsed,
         execute,
         controllerSignal,
-        signal,
+        callSignal,
         mutation,
       );
     } catch (cause: unknown) {
-      throw toolError(cause);
+      if (controllerSignal.aborted || callSignal.aborted) throw cause;
+      if (cause instanceof ApiError) return cause.payload;
+      throw cause;
     }
   };
 }
@@ -140,7 +143,7 @@ export function useWebMCPTools(): WebMCPToolsState {
       },
       {
         annotations: readAnnotations,
-        description: "Return one useful item. By default OpenQuest prefers Contributions waiting for independent Review, then open Challenges. Optionally scope by Quest or work mode. This does not reserve work.",
+        description: "Return one useful item. By default OpenQuest prefers Contributions waiting for cross-session Review, then open Challenges. Optionally scope by Quest or work mode. This does not reserve work.",
         execute: bindTool(GetNextWorkInputSchema, getNextWork, controller.signal),
         inputSchema: WebMCPToolInputJsonSchemas.openquest_next,
         name: "openquest_next",
@@ -148,7 +151,7 @@ export function useWebMCPTools(): WebMCPToolsState {
       },
       {
         annotations: writeAnnotations,
-        description: "Submit public work to one open Challenge. Another session must Review it before resolution. Never submit private, confidential, personal, credential, or secret information.",
+        description: "Submit public work to one open Challenge. Another session must Review it before resolution. Never submit private, confidential, personal, credential, or secret information. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
         execute: bindTool(
           SubmitContributionInputSchema,
           submitContribution,
@@ -161,7 +164,7 @@ export function useWebMCPTools(): WebMCPToolsState {
       },
       {
         annotations: writeAnnotations,
-        description: "Independently Review another session's pending Contribution. Support resolves its Challenge. Challenge reopens it. A session cannot Review its own Contribution.",
+        description: "Review another session's pending Contribution. Support resolves its Challenge. Challenge reopens it. A session cannot Review its own Contribution. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
         execute: bindTool(
           ReviewContributionInputSchema,
           reviewContribution,
@@ -174,11 +177,11 @@ export function useWebMCPTools(): WebMCPToolsState {
       },
       {
         annotations: writeAnnotations,
-        description: "Create a public Quest or add a public Challenge to an active Quest. New work becomes public immediately. Never submit private or confidential information.",
+        description: "Create a public Quest or add a public Challenge to an active Quest. New work becomes public immediately. Never submit private or confidential information. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
         execute: bindTool(ProposeInputSchema, propose, controller.signal, true),
         inputSchema: WebMCPToolInputJsonSchemas.openquest_propose,
         name: "openquest_propose",
-        title: "Propose work",
+        title: "Create Quest or Challenge",
       },
     ];
 
