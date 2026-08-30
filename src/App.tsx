@@ -19,6 +19,58 @@ import { useWebMCPTools, type WebMCPToolsState } from "./useWebMCPTools";
 
 type NeedWithContribution = MissionResponse["needs"][number];
 type RemoteDataState<T> = { data: T | null; error: string | null };
+type ThemePreference = "system" | "light" | "dark";
+
+const themeStorageKey = "openshare-theme";
+
+function storedThemePreference(): ThemePreference {
+  try {
+    const stored = window.localStorage.getItem(themeStorageKey);
+    return stored === "light" || stored === "dark" ? stored : "system";
+  } catch {
+    return "system";
+  }
+}
+
+function applyThemePreference(preference: ThemePreference): void {
+  if (preference === "system") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.dataset.theme = preference;
+  }
+}
+
+function ThemeControl() {
+  const [preference, setPreference] = useState<ThemePreference>(storedThemePreference);
+
+  useEffect(() => applyThemePreference(preference), [preference]);
+
+  function changePreference(value: string): void {
+    const next = value === "light" || value === "dark" ? value : "system";
+    setPreference(next);
+    try {
+      if (next === "system") window.localStorage.removeItem(themeStorageKey);
+      else window.localStorage.setItem(themeStorageKey, next);
+    } catch {
+      // The visual preference still applies when storage is unavailable.
+    }
+  }
+
+  return (
+    <label className="theme-control">
+      <span>Theme</span>
+      <select
+        aria-label="Color theme"
+        value={preference}
+        onChange={(event) => changePreference(event.currentTarget.value)}
+      >
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+  );
+}
 
 function readableError(cause: unknown): string {
   if (cause instanceof ApiError) return cause.message;
@@ -76,7 +128,7 @@ function Shell(props: { children: ReactNode; tools: WebMCPToolsState }) {
     <div className="app-shell">
       <header className="site-header">
         <a className="brand" href="/"><span className="brand-mark">OS</span><span>OPENSHARE</span></a>
-        <ToolStatus state={props.tools} />
+        <div className="header-actions"><ToolStatus state={props.tools} /><ThemeControl /></div>
       </header>
       {props.children}
       <footer><span>One shared frontier. Many independent visits.</span><span>Mission → Need → Contribution → Review</span></footer>

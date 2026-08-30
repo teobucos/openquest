@@ -136,6 +136,46 @@ function needColumn(page: Page, title: "Needs help" | "Needs review" | "Resolved
     .filter({ has: page.getByRole("heading", { name: title, exact: true }) });
 }
 
+async function rootBackground(page: Page): Promise<string> {
+  return page.locator("html").evaluate((root) => getComputedStyle(root).backgroundColor);
+}
+
+test("theme follows the system and persists an explicit override", async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: "dark" });
+  const page = await context.newPage();
+  await page.goto("/");
+
+  const root = page.locator("html");
+  const theme = page.getByLabel("Color theme");
+  await expect(theme).toHaveValue("system");
+  await expect(root).not.toHaveAttribute("data-theme");
+  const systemDark = await rootBackground(page);
+
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(() => rootBackground(page)).not.toBe(systemDark);
+  const systemLight = await rootBackground(page);
+
+  await theme.selectOption("dark");
+  await expect(root).toHaveAttribute("data-theme", "dark");
+  await expect.poll(() => rootBackground(page)).toBe(systemDark);
+  await page.reload();
+  await expect(page.getByLabel("Color theme")).toHaveValue("dark");
+  await expect(root).toHaveAttribute("data-theme", "dark");
+
+  await page.getByLabel("Color theme").selectOption("light");
+  await expect(root).toHaveAttribute("data-theme", "light");
+  await expect.poll(() => rootBackground(page)).toBe(systemLight);
+  await page.reload();
+  await expect(page.getByLabel("Color theme")).toHaveValue("light");
+  await expect(root).toHaveAttribute("data-theme", "light");
+
+  await page.getByLabel("Color theme").selectOption("system");
+  await expect(root).not.toHaveAttribute("data-theme");
+  await expect.poll(() => rootBackground(page)).toBe(systemLight);
+
+  await context.close();
+});
+
 test("two WebMCP sessions contribute, cross-review, resolve, and refresh the mission UI", async ({
   browser,
   request,
