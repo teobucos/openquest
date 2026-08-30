@@ -64,6 +64,10 @@ interface QuestCountsRow {
   resolved: number;
 }
 
+interface QuestCardRow extends QuestRow, QuestCountsRow {
+  active_agents: number;
+}
+
 interface ChallengePreviewRow extends ChallengeRow {
   contribution_id: string | null;
   contribution_summary: string | null;
@@ -232,6 +236,33 @@ export async function getQuestCounts(db: D1Database, questId: string) {
   return row ?? { open: 0, awaiting_review: 0, resolved: 0 };
 }
 
+export async function listQuestCards(db: D1Database, limit: number, questId?: string) {
+  const result = await db.prepare(
+    "SELECT q.id, q.slug, q.title, q.goal, q.description, q.status, q.created_at, q.updated_at, "
+      + "COALESCE(SUM(CASE WHEN c.status = 'open' THEN 1 ELSE 0 END), 0) AS open, "
+      + "COALESCE(SUM(CASE WHEN c.status = 'awaiting_review' THEN 1 ELSE 0 END), 0) AS awaiting_review, "
+      + "COALESCE(SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END), 0) AS resolved, "
+      + "(SELECT COUNT(DISTINCT e.actor_session_id) FROM events e "
+      + "WHERE e.quest_id = q.id "
+      + "AND e.event_type IN ('challenge.created', 'contribution.created', 'review.supported', 'review.challenged') "
+      + "AND e.actor_session_id IS NOT NULL "
+      + "AND e.created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')) AS active_agents "
+      + "FROM quests q LEFT JOIN challenges c ON c.quest_id = q.id "
+      + (questId ? "WHERE q.id = ? " : "WHERE q.status = 'active' ")
+      + "GROUP BY q.id ORDER BY q.created_at DESC, q.id DESC"
+      + (questId ? "" : " LIMIT ?"),
+  ).bind(...(questId ? [questId] : [limit])).all<QuestCardRow>();
+  return result.results.map((row) => ({
+    ...presentQuest(row),
+    counts: {
+      open: row.open,
+      awaiting_review: row.awaiting_review,
+      resolved: row.resolved,
+    },
+    active_agents: row.active_agents,
+  }));
+}
+
 async function activeQuestCounts(db: D1Database) {
   const row = await db.prepare(
     "SELECT COALESCE(SUM(CASE WHEN c.status = 'open' THEN 1 ELSE 0 END), 0) AS open, "
@@ -262,25 +293,38 @@ export async function listChallengePreviews(db: D1Database, questId: string, lim
   }));
 }
 
-export async function getWorld(db: D1Database, questId: string | undefined, limit: number) {
-  const result = await db.prepare(
-    `SELECT id, slug, title, goal, description, status, created_at, updated_at FROM quests ${questId ? "WHERE id = ?" : "WHERE status = 'active' ORDER BY created_at DESC, id DESC LIMIT ?"}`,
-  ).bind(...(questId ? [questId] : [limit])).all<QuestRow>();
-  if (questId && result.results.length === 0) {
-    storeFail(404, "not_found", "Quest not found.", nextAction("Choose another Quest."));
+export async function observeState(db: D1Database, questId: string | undefined, limit: number) {
+  if (questId) {
+    const quests = await listQuestCards(db, limit, questId);
+    const quest = quests[0];
+    if (!quest) {
+      storeFail(404, "not_found", "Quest not found.", nextAction("Choose another Quest."));
+    }
+    const [challenges, activity] = await Promise.all([
+      listChallengePreviews(db, questId),
+      recentEvents(db, questId, limit),
+    ]);
+    return {
+      quests,
+      totals: quest.counts,
+      active_agents: quest.active_agents,
+      challenges,
+      activity,
+    };
   }
-  const quests = await Promise.all(result.results.map(async (quest) => ({
-    ...presentQuest(quest),
-    counts: await getQuestCounts(db, quest.id),
-    active_agents: await activeAgentCount(db, quest.id),
-  })));
+
+  const [quests, totals, active_agents, activity] = await Promise.all([
+    listQuestCards(db, limit),
+    activeQuestCounts(db),
+    activeAgentCount(db),
+    recentEvents(db, undefined, limit),
+  ]);
   return {
     quests,
-    totals: questId ? await getQuestCounts(db, questId) : await activeQuestCounts(db),
-    active_agents: await activeAgentCount(db, questId),
-    challenges: questId ? await listChallengePreviews(db, questId) : [],
-    activity: await recentEvents(db, questId, limit),
-    suggested_next: "Call openquest_next to receive one useful item.",
+    totals,
+    active_agents,
+    challenges: [],
+    activity,
   };
 }
 
@@ -305,9 +349,9 @@ export async function getContribution(db: D1Database, id: string) {
       + "q.id AS quest_id, q.slug AS quest_slug, q.title AS quest_title FROM contributions c JOIN challenges h ON h.id = c.challenge_id JOIN quests q ON q.id = h.quest_id WHERE c.id = ?",
   ).bind(id).first<ContributionDetailRow>();
   if (!contribution) storeFail(404, "not_found", "Contribution not found.");
-  const reviews = await db.prepare(
-    "SELECT id, contribution_id, reviewer_session_id, verdict, reason, evidence_json, created_at FROM reviews WHERE contribution_id = ? ORDER BY created_at, id LIMIT 20",
-  ).bind(id).all<ReviewRow>();
+  const review = await db.prepare(
+    "SELECT id, contribution_id, reviewer_session_id, verdict, reason, evidence_json, created_at FROM reviews WHERE contribution_id = ?",
+  ).bind(id).first<ReviewRow>();
   return {
     contribution: presentContribution(contribution),
     challenge: {
@@ -320,7 +364,7 @@ export async function getContribution(db: D1Database, id: string) {
       updated_at: contribution.challenge_updated_at,
     },
     quest: { id: contribution.quest_id, slug: contribution.quest_slug, title: contribution.quest_title },
-    reviews: reviews.results.map(presentReview),
+    review: review ? presentReview(review) : null,
   };
 }
 
@@ -348,8 +392,6 @@ export async function createChallenge(
   actor: ActorIdentity,
   input: { quest_id: string; title: string; description: string },
 ) {
-  const quest = await db.prepare("SELECT id FROM quests WHERE id = ? AND status = 'active'").bind(input.quest_id).first<IdRow>();
-  if (!quest) storeFail(409, "quest_unavailable", "This Quest is not active.", nextAction("Choose another active Quest."));
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   try {
