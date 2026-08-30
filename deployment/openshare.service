@@ -11,7 +11,9 @@ WorkingDirectory=/root/openshare
 Environment=NODE_ENV=production
 Environment=HOME=/home/agent
 Environment=XDG_CACHE_HOME=/home/agent/.cache
+Environment=XDG_CONFIG_HOME=/tmp
 Environment=BUN_INSTALL=/home/agent/.bun
+Environment=WRANGLER_LOG_PATH=/tmp/openshare-wrangler.log
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/usr/local/bin/bun run --bun serve
 Restart=on-failure
@@ -36,7 +38,7 @@ ProtectKernelModules=true
 ProtectKernelTunables=true
 LockPersonality=true
 RestrictSUIDSGID=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 ProcSubset=pid
 ProtectProc=invisible
 CapabilityBoundingSet=
