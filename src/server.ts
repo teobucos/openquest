@@ -7,7 +7,13 @@ import {
   SubmitContributionInputSchema,
   type ApiErrorResponse,
 } from "./contracts";
-import { enforceWriteLimit, ensureIdentity, readIdentity } from "./identity";
+import {
+  actorRateLimitKey,
+  addressRateLimitKey,
+  consumeRateLimit,
+  ensureIdentity,
+  readIdentity,
+} from "./identity";
 import {
   StoreError,
   createChallenge,
@@ -70,8 +76,12 @@ async function parseBody<Input>(request: Request, schema: z.ZodType<Input>): Pro
 }
 
 async function writeIdentity(request: Request, env: Env) {
+  const addressBucket = await addressRateLimitKey(request);
+  if (!await consumeRateLimit(env.DB, addressBucket)) {
+    fail(429, "rate_limited", "Anonymous write limit reached. Try again after one minute.");
+  }
   const identity = await ensureIdentity(request, env.DB);
-  if (!await enforceWriteLimit(request, env.DB, identity.actor)) {
+  if (!await consumeRateLimit(env.DB, actorRateLimitKey(identity.actor))) {
     fail(429, "rate_limited", "Anonymous write limit reached. Try again after one minute.");
   }
   return identity;

@@ -7,6 +7,16 @@ const IdentifierSchema = z
   .max(128)
   .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, "Identifier contains unsupported characters");
 
+const CanonicalQuestIdSchema = IdentifierSchema.describe(
+  "Canonical Quest ID returned by OpenQuest. Do not use the human-readable URL slug.",
+);
+const CanonicalChallengeIdSchema = IdentifierSchema.describe(
+  "Canonical Challenge ID returned by OpenQuest.",
+);
+const CanonicalContributionIdSchema = IdentifierSchema.describe(
+  "Canonical Contribution ID returned by OpenQuest.",
+);
+
 const SlugSchema = z
   .string()
   .trim()
@@ -23,6 +33,7 @@ const ChallengeDescriptionSchema = z.string().trim().min(10).max(2_000);
 const ContributionSummarySchema = z.string().trim().min(1).max(800);
 const ContributionContentSchema = z
   .string()
+  .min(1, "Contribution content cannot be empty.")
   .max(12_000)
   .refine((value) => value.trim().length > 0, {
     message: "Contribution content cannot be empty.",
@@ -125,21 +136,29 @@ export const EventSchema = z
 
 export const ObserveInputSchema = z
   .object({
-    quest_id: IdentifierSchema.optional(),
-    limit: z.number().int().min(1).max(20).default(10),
+    quest_id: CanonicalQuestIdSchema.optional(),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(10)
+      .describe(
+        "Maximum active Quests and recent activity entries to return. Scoped Challenge previews use a separate fixed 100-item bound.",
+      ),
   })
   .strict();
 
 export const GetNextWorkInputSchema = z
   .object({
-    quest_id: IdentifierSchema.optional(),
+    quest_id: CanonicalQuestIdSchema.optional(),
     mode: z.enum(["any", "contribute", "review"]).default("any"),
   })
   .strict();
 
 export const SubmitContributionInputSchema = z
   .object({
-    challenge_id: IdentifierSchema,
+    challenge_id: CanonicalChallengeIdSchema,
     summary: ContributionSummarySchema,
     content: ContributionContentSchema,
     evidence: EvidenceListSchema.optional().default([]),
@@ -148,7 +167,7 @@ export const SubmitContributionInputSchema = z
 
 export const ReviewContributionInputSchema = z
   .object({
-    contribution_id: IdentifierSchema,
+    contribution_id: CanonicalContributionIdSchema,
     verdict: ReviewVerdictSchema,
     reason: ReviewReasonSchema,
     evidence: EvidenceListSchema.optional().default([]),
@@ -165,7 +184,7 @@ export const CreateQuestInputSchema = z
 
 export const CreateChallengeInputSchema = z
   .object({
-    quest_id: IdentifierSchema,
+    quest_id: CanonicalQuestIdSchema,
     title: TitleSchema,
     description: ChallengeDescriptionSchema,
   })
@@ -183,7 +202,7 @@ const ProposeQuestInputSchema = z
 const ProposeChallengeInputSchema = z
   .object({
     kind: z.literal("challenge"),
-    quest_id: IdentifierSchema,
+    quest_id: CanonicalQuestIdSchema,
     title: TitleSchema,
     description: ChallengeDescriptionSchema,
   })
@@ -389,17 +408,11 @@ export type ContributionPreview = z.output<typeof ContributionPreviewSchema>;
 export type Review = z.output<typeof ReviewSchema>;
 export type Event = z.output<typeof EventSchema>;
 export type ObserveInput = z.input<typeof ObserveInputSchema>;
-export type ObserveOutput = z.output<typeof ObserveInputSchema>;
 export type GetNextWorkInput = z.input<typeof GetNextWorkInputSchema>;
-export type GetNextWorkOutput = z.output<typeof GetNextWorkInputSchema>;
 export type SubmitContributionInput = z.input<typeof SubmitContributionInputSchema>;
-export type SubmitContributionOutput = z.output<typeof SubmitContributionInputSchema>;
 export type ReviewContributionInput = z.input<typeof ReviewContributionInputSchema>;
-export type ReviewContributionOutput = z.output<typeof ReviewContributionInputSchema>;
 export type CreateQuestInput = z.input<typeof CreateQuestInputSchema>;
-export type CreateQuestOutput = z.output<typeof CreateQuestInputSchema>;
 export type CreateChallengeInput = z.input<typeof CreateChallengeInputSchema>;
-export type CreateChallengeOutput = z.output<typeof CreateChallengeInputSchema>;
 export type ProposeInput = z.input<typeof ProposeInputSchema>;
 export type ProposeOutput = z.output<typeof ProposeInputSchema>;
 export type ObserveResponse = z.output<typeof ObserveResponseSchema>;

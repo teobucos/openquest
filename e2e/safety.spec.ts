@@ -15,6 +15,27 @@ import {
   successfulTool,
 } from "./helpers";
 
+test("home explains unsupported WebMCP and an empty active Quest list", async ({ page }) => {
+  await page.route("**/api/world*", (route) => route.fulfill({
+    body: JSON.stringify({
+      active_agents: 0,
+      activity: [],
+      quests: [],
+      totals: { awaiting_review: 0, open: 0, resolved: 0 },
+    }),
+    contentType: "application/json",
+    status: 200,
+  }));
+
+  await page.goto("/");
+  await expect(page.getByText("WebMCP · browser unsupported", { exact: true })).toBeVisible();
+  const emptyQuestCopy = page.locator(".quest-grid .empty-copy");
+  await expect(emptyQuestCopy).toBeVisible();
+  expect(await emptyQuestCopy.innerText()).toBe(
+    "No active Quests yet.\nCreate the first Quest below.",
+  );
+});
+
 test("OpenQuest keeps public reads inert and returns invalid tool input as structured results", async ({ browser, request }) => {
   const publicRead = await request.get("/api/world");
   expect(publicRead.status()).toBe(200);
@@ -273,12 +294,15 @@ test("Quest previews stay bounded and omit full Contribution work", async ({ bro
       CreateQuestResponseSchema,
     );
 
+    writerContexts.push(...await Promise.all(
+      Array.from({ length: 10 }, (_, index) => browser.newContext({
+        extraHTTPHeaders: { "cf-connecting-ip": `e2e-bounds-${index}-${crypto.randomUUID()}` },
+      })),
+    ));
+
     let firstContributionId: string | null = null;
     for (let index = 0; index < 101; index += 1) {
-      const writer = await browser.newContext({
-        extraHTTPHeaders: { "cf-connecting-ip": `e2e-bounds-${index}-${crypto.randomUUID()}` },
-      });
-      writerContexts.push(writer);
+      const writer = writerContexts[index % writerContexts.length];
       const challengeResponse = await writer.request.post("/api/challenges", {
         data: {
           description: `Create compact preview fixture ${index} without changing the public data-model rules.`,

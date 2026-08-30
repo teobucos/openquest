@@ -131,7 +131,7 @@ function storeFail(
   throw new StoreError(httpStatus, action ? { status, message, next_action: action } : { status, message });
 }
 
-export function mapDatabaseError(cause: unknown): never {
+function mapDatabaseError(cause: unknown): never {
   const message = cause instanceof Error ? cause.message : "";
   if (message.includes("challenge_unavailable")) {
     storeFail(409, "challenge_unavailable", "This Challenge is no longer open.", nextAction("Find another useful item."));
@@ -226,7 +226,7 @@ async function activeAgentCount(db: D1Database, questId?: string): Promise<numbe
   return result?.count ?? 0;
 }
 
-export async function getQuestCounts(db: D1Database, questId: string) {
+async function getQuestCounts(db: D1Database, questId: string) {
   const row = await db.prepare(
     "SELECT COALESCE(SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END), 0) AS open, "
       + "COALESCE(SUM(CASE WHEN status = 'awaiting_review' THEN 1 ELSE 0 END), 0) AS awaiting_review, "
@@ -236,7 +236,7 @@ export async function getQuestCounts(db: D1Database, questId: string) {
   return row ?? { open: 0, awaiting_review: 0, resolved: 0 };
 }
 
-export async function listQuestCards(db: D1Database, limit: number, questId?: string) {
+async function listQuestCards(db: D1Database, limit: number, questId?: string) {
   const result = await db.prepare(
     "SELECT q.id, q.slug, q.title, q.goal, q.description, q.status, q.created_at, q.updated_at, "
       + "COALESCE(SUM(CASE WHEN c.status = 'open' THEN 1 ELSE 0 END), 0) AS open, "
@@ -273,7 +273,7 @@ async function activeQuestCounts(db: D1Database) {
   return row ?? { open: 0, awaiting_review: 0, resolved: 0 };
 }
 
-export async function listChallengePreviews(db: D1Database, questId: string, limit = 100) {
+async function listChallengePreviews(db: D1Database, questId: string, limit = 100) {
   const result = await db.prepare(
     "SELECT h.id, h.quest_id, h.title, h.description, h.status, h.created_at, h.updated_at, "
       + "c.id AS contribution_id, c.summary AS contribution_summary, c.status AS contribution_status, c.created_at AS contribution_created_at "
@@ -323,7 +323,6 @@ export async function observeState(db: D1Database, questId: string | undefined, 
     quests,
     totals,
     active_agents,
-    challenges: [],
     activity,
   };
 }
@@ -369,8 +368,8 @@ export async function getContribution(db: D1Database, id: string) {
 }
 
 function questSlug(title: string, id: string): string {
-  const base = title.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 72).replace(/-+$/g, "") || "quest";
-  return `${base}-${id.replaceAll("-", "").slice(0, 6)}`;
+  const base = title.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70).replace(/-+$/g, "") || "quest";
+  return `${base}-${id.replaceAll("-", "").slice(0, 8)}`;
 }
 
 export async function createQuest(

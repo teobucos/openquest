@@ -20,12 +20,13 @@ identifiers and metadata, source or citation metadata, verification state,
 timestamps, relationship or graph metadata, and structured factual datasets
 produced by OpenQuest. See [LICENSES/CC0-1.0.txt](./LICENSES/CC0-1.0.txt).
 
-## Authored Contributions
+## Authored expression
 
-Substantial original text or artifacts submitted to the public OpenQuest
-network are intended to be available under CC BY 4.0 by default, to the extent
-copyright or similar rights exist and the submitter has authority to license
-them. See [CONTRIBUTION_TERMS.md](./CONTRIBUTION_TERMS.md) and
+Original copyrightable expression submitted through a Quest, Challenge,
+Contribution, or Review is licensed to the public under CC BY 4.0, to the
+extent copyright or similar rights exist and the submitter owns or controls
+the rights needed to grant that license. See
+[CONTRIBUTION_TERMS.md](./CONTRIBUTION_TERMS.md) and
 [LICENSES/CC-BY-4.0.txt](./LICENSES/CC-BY-4.0.txt).
 
 ## Evidence

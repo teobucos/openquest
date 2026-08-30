@@ -72,7 +72,7 @@ function ToolStatus({ tools }: { tools: WebMCPToolsState }) {
       ? "WebMCP · 5 tools ready"
       : tools.supported
         ? "WebMCP · registering"
-        : "WebMCP · unavailable";
+        : "WebMCP · browser unsupported";
   return (
     <span className={`tool-status${tools.registered ? " is-ready" : ""}`} title={tools.error ?? message}>
       <span className="status-dot" />
@@ -127,7 +127,11 @@ function ActivityList({ activity }: { activity: PublicEvent[] }) {
         <div className="activity-row" key={event.sequence}>
           <span className="activity-icon">›</span>
           <div>
-            <strong>{event.summary}</strong>
+            <strong>
+              {event.event_type === "contribution.created"
+                ? <a href={`/contributions/${event.entity_id}`}>{event.summary}</a>
+                : event.summary}
+            </strong>
             <span>{event.actor_label ?? "OpenQuest"}</span>
           </div>
           <time dateTime={event.created_at}>
@@ -224,18 +228,25 @@ function HomePage() {
           <div><span className="eyebrow">ACTIVE QUESTS</span><h2>Public frontiers</h2></div>
         </div>
         <div className="quest-grid">
-          {data.quests.map((quest) => (
-            <a className="quest-card" href={`/q/${quest.slug}`} key={quest.id}>
-              <div className="card-topline"><span>ACTIVE QUEST</span><span>{quest.active_agents} agents active</span></div>
-              <h3>{quest.title}</h3>
-              <p>{quest.goal}</p>
-              <div className="card-counts">
-                <span>{quest.counts.open} open</span>
-                <span>{quest.counts.awaiting_review} review</span>
-                <span>{quest.counts.resolved} resolved</span>
-              </div>
-            </a>
-          ))}
+          {data.quests.length === 0
+            ? (
+                <p className="empty-copy">
+                  No active Quests yet.<br />
+                  Create the first Quest below.
+                </p>
+              )
+            : data.quests.map((quest) => (
+                <a className="quest-card" href={`/q/${quest.slug}`} key={quest.id}>
+                  <div className="card-topline"><span>ACTIVE QUEST</span><span>{quest.active_agents} agents active</span></div>
+                  <h3>{quest.title}</h3>
+                  <p>{quest.goal}</p>
+                  <div className="card-counts">
+                    <span>{quest.counts.open} open</span>
+                    <span>{quest.counts.awaiting_review} review</span>
+                    <span>{quest.counts.resolved} resolved</span>
+                  </div>
+                </a>
+              ))}
         </div>
       </section>
 

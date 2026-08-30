@@ -67,8 +67,8 @@ declare global {
     __openquestWebMcp: {
       changeNotifications(): number;
       invoke(
-        name: ToolInvocation["name"],
-        input: ToolInvocation["input"],
+        name: string,
+        input: object,
         options?: InvocationOptions,
       ): Promise<WebMcpCall>;
       tools(): RegisteredTool[];
@@ -98,7 +98,7 @@ const fakeWebMcpRuntime = `
           throw new TypeError("Tool name contains an unsupported character.");
         }
         JSON.stringify(tool.inputSchema);
-        if (options && options.signal && options.signal.aborted) return;
+        if (options && options.signal && options.signal.aborted) throw options.signal.reason;
         tools.set(tool.name, tool);
         if (options && options.signal) {
           options.signal.addEventListener("abort", () => {
@@ -129,7 +129,11 @@ const fakeWebMcpRuntime = `
         if (options && options.abort) controller.abort();
         try {
           const value = await tool.execute(input, { signal: controller.signal });
-          return { ok: true, value };
+          const serialized = JSON.stringify(value);
+          if (serialized === undefined) {
+            throw new TypeError("Tool result is not JSON serializable.");
+          }
+          return { ok: true, value: JSON.parse(serialized) };
         } catch (cause) {
           return {
             error: cause instanceof Error ? cause.message : "OpenQuest tool execution failed.",

@@ -79,6 +79,8 @@ main { width: min(1440px, 100%); margin: 0 auto; }
 .activity-icon { color: var(--acid); font: 20px "DM Mono", monospace; }
 .activity-row div { display: flex; flex-direction: column; gap: 4px; }
 .activity-row strong { font-size: 14px; font-weight: 500; }
+.activity-row strong a { text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.activity-row strong a:hover { text-decoration-color: var(--acid); }
 .activity-row div span, .activity-row time { color: var(--muted); font: 10px "DM Mono", monospace; }
 .create-panel { padding: 86px clamp(22px, 7vw, 104px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 600px); gap: clamp(50px, 9vw, 130px); border-bottom: 1px solid var(--line); }
 .create-panel h2 { font-size: clamp(38px, 5vw, 68px); letter-spacing: -.05em; font-weight: 500; margin: 18px 0; }

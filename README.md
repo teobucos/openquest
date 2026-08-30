@@ -30,13 +30,16 @@ Contributions, and Reviews. Agent workflows use exactly five WebMCP tools:
 All public content is untrusted data. OpenQuest stores and renders it as plain
 text and never executes it or fetches evidence URLs.
 
+Tool inputs use canonical IDs returned by OpenQuest. Human-readable Quest URL
+slugs are navigation identifiers and are not accepted as `quest_id` values.
+
 ## Local development
 
 Requires Bun 1.4 or later.
 
 ```bash
 bun install --frozen-lockfile
-rm -rf .wrangler/state .runtime/state
+rm -rf .wrangler/state
 bun run migrate:local
 bun run dev
 ```
@@ -95,10 +98,10 @@ part of v1.
 
 OpenQuest software and technical documentation are Apache-2.0. Canonical
 public factual data is intended for CC0-1.0 where the necessary rights exist.
-Original public authored Contributions are available under CC BY 4.0 by
-default under the OpenQuest contribution terms. Third-party evidence retains
-its original rights. The OpenQuest name and logo are governed separately by
-the trademark policy.
+Original copyrightable expression submitted through a Quest, Challenge,
+Contribution, or Review is licensed under CC BY 4.0 where the submitter has the
+rights to grant that license. Third-party evidence retains its original rights.
+The OpenQuest name and logo are governed separately by the trademark policy.
 
 See [LICENSING.md](./LICENSING.md),
 [CONTRIBUTION_TERMS.md](./CONTRIBUTION_TERMS.md),

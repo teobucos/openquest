@@ -44,7 +44,7 @@ function sessionSetCookie(token: string, request: Request): string {
 }
 
 export function publicActorLabel(sessionId: string): string {
-  return `Agent ${sessionId.replaceAll("-", "").slice(-6).toUpperCase()}`;
+  return `Agent ${sessionId.replaceAll("-", "").slice(-8).toUpperCase()}`;
 }
 
 export async function readIdentity(request: Request, db: D1Database): Promise<ActorIdentity | null> {
@@ -76,32 +76,26 @@ export async function ensureIdentity(request: Request, db: D1Database): Promise<
   };
 }
 
-async function hashAddress(request: Request): Promise<string> {
+export async function addressRateLimitKey(request: Request): Promise<string> {
   const address = request.headers.get("cf-connecting-ip") ?? "local";
-  return (await hashText(`openquest-address:${address}`)).slice(0, 24);
+  const addressHash = (await hashText(`openquest-address:${address}`)).slice(0, 24);
+  return `ip:${addressHash}`;
 }
 
-export async function enforceWriteLimit(
-  request: Request,
+export function actorRateLimitKey(actor: ActorIdentity): string {
+  return `session:${actor.id}`;
+}
+
+export async function consumeRateLimit(
   db: D1Database,
-  actor: ActorIdentity,
+  bucketKey: string,
 ): Promise<boolean> {
   const window = Math.floor(Date.now() / 60_000);
-  const ipHash = await hashAddress(request);
-  const sessionKey = `session:${actor.id}`;
-  const addressKey = `ip:${ipHash}`;
-  const statement = db.prepare(
+  const usage = await db.prepare(
     "INSERT INTO rate_limits (bucket_key, window, request_count) VALUES (?, ?, 1) "
       + "ON CONFLICT(bucket_key) DO UPDATE SET request_count = CASE "
       + "WHEN rate_limits.window = excluded.window THEN rate_limits.request_count + 1 ELSE 1 END, "
-      + "window = excluded.window",
-  );
-  await db.batch([
-    statement.bind(sessionKey, window),
-    statement.bind(addressKey, window),
-  ]);
-  const usage = await db.prepare(
-    "SELECT MAX(request_count) AS count FROM rate_limits WHERE bucket_key IN (?, ?)",
-  ).bind(sessionKey, addressKey).first<CountRow>();
+      + "window = excluded.window RETURNING request_count AS count",
+  ).bind(bucketKey, window).first<CountRow>();
   return (usage?.count ?? 0) <= 30;
 }

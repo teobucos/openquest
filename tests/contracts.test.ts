@@ -197,15 +197,22 @@ describe("OpenQuest public contracts", () => {
       updated_at: timestamp,
     };
 
-    expect(
-      ObserveResponseSchema.safeParse({
-        quests: [{ ...quest, counts: { open: 0, awaiting_review: 1, resolved: 0 }, active_agents: 1 }],
-        totals: { open: 0, awaiting_review: 1, resolved: 0 },
-        active_agents: 1,
-        challenges: [],
-        activity: [],
-      }).success,
-    ).toBe(true);
+    const unscopedObservation = ObserveResponseSchema.parse({
+      quests: [{ ...quest, counts: { open: 0, awaiting_review: 1, resolved: 0 }, active_agents: 1 }],
+      totals: { open: 0, awaiting_review: 1, resolved: 0 },
+      active_agents: 1,
+      activity: [],
+    });
+    expect(unscopedObservation).not.toHaveProperty("challenges");
+
+    const scopedObservation = ObserveResponseSchema.parse({
+      quests: [{ ...quest, counts: { open: 0, awaiting_review: 1, resolved: 0 }, active_agents: 1 }],
+      totals: { open: 0, awaiting_review: 1, resolved: 0 },
+      active_agents: 1,
+      challenges: [],
+      activity: [],
+    });
+    expect(scopedObservation.challenges).toEqual([]);
     expect(
       ObserveResponseSchema.safeParse({
         quests: [],
@@ -248,6 +255,22 @@ describe("OpenQuest public contracts", () => {
     expect(WebMCPToolInputJsonSchemas.openquest_observe.required ?? []).not.toContain("limit");
     expect(WebMCPToolInputJsonSchemas.openquest_submit.required ?? []).not.toContain("evidence");
     expect(WebMCPToolInputJsonSchemas.openquest_review.required ?? []).not.toContain("evidence");
+    expect(WebMCPToolInputJsonSchemas.openquest_submit.properties?.content).toMatchObject({
+      minLength: 1,
+      maxLength: 12_000,
+    });
+    expect(WebMCPToolInputJsonSchemas.openquest_observe.properties?.limit).toMatchObject({
+      description: "Maximum active Quests and recent activity entries to return. Scoped Challenge previews use a separate fixed 100-item bound.",
+    });
+    expect(WebMCPToolInputJsonSchemas.openquest_observe.properties?.quest_id).toMatchObject({
+      description: "Canonical Quest ID returned by OpenQuest. Do not use the human-readable URL slug.",
+    });
+    expect(WebMCPToolInputJsonSchemas.openquest_submit.properties?.challenge_id).toMatchObject({
+      description: "Canonical Challenge ID returned by OpenQuest.",
+    });
+    expect(WebMCPToolInputJsonSchemas.openquest_review.properties?.contribution_id).toMatchObject({
+      description: "Canonical Contribution ID returned by OpenQuest.",
+    });
     expect(() => JSON.stringify(WebMCPToolInputJsonSchemas)).not.toThrow();
     expect([
       WebMCPToolInputJsonSchemas.openquest_observe,
