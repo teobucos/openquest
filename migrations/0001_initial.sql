@@ -3,8 +3,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
   token_hash TEXT NOT NULL UNIQUE CHECK (length(token_hash) BETWEEN 32 AND 255),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  last_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE TABLE quests (
@@ -102,8 +101,20 @@ CREATE INDEX contributions_by_session_created
   ON contributions (session_id, created_at DESC);
 CREATE INDEX events_by_quest_sequence
   ON events (quest_id, sequence ASC);
+CREATE INDEX events_by_quest_activity
+  ON events (quest_id, created_at DESC, event_type, actor_session_id);
 CREATE INDEX events_by_activity_created
   ON events (event_type, created_at DESC, actor_session_id);
+
+CREATE TRIGGER challenges_require_active_quest
+BEFORE INSERT ON challenges
+FOR EACH ROW
+WHEN NOT EXISTS (
+  SELECT 1 FROM quests WHERE id = NEW.quest_id AND status = 'active'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'quest_unavailable');
+END;
 
 CREATE TRIGGER quests_created_event
 AFTER INSERT ON quests

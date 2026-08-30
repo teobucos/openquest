@@ -218,7 +218,6 @@ export const ObserveResponseSchema = z
     active_agents: z.number().int().nonnegative(),
     challenges: z.array(ChallengeWithContributionSchema).max(100).optional(),
     activity: z.array(EventSchema).max(20),
-    suggested_next: z.string().trim().min(1).max(240),
   })
   .strict();
 
@@ -237,7 +236,7 @@ export const ContributionResponseSchema = z
     contribution: ContributionSchema,
     challenge: ChallengeSchema,
     quest: QuestSchema.pick({ id: true, slug: true, title: true }),
-    reviews: z.array(ReviewSchema).max(20),
+    review: ReviewSchema.nullable(),
   })
   .strict();
 
@@ -368,7 +367,6 @@ export const ApiErrorResponseSchema = z
       "contribution_unavailable",
       "self_review_forbidden",
       "rate_limited",
-      "conflict",
       "error",
     ]),
     message: z.string().trim().min(1).max(500),

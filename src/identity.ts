@@ -1,6 +1,5 @@
 export interface ActorIdentity {
   id: string;
-  label: string;
 }
 
 export interface EnsuredIdentity {
@@ -55,16 +54,13 @@ export async function readIdentity(request: Request, db: D1Database): Promise<Ac
   const session = await db.prepare("SELECT id FROM sessions WHERE token_hash = ?")
     .bind(tokenHash)
     .first<IdRow>();
-  return session ? { id: session.id, label: publicActorLabel(session.id) } : null;
+  return session ? { id: session.id } : null;
 }
 
 export async function ensureIdentity(request: Request, db: D1Database): Promise<EnsuredIdentity> {
   const existing = await readIdentity(request, db);
   const now = new Date().toISOString();
   if (existing) {
-    await db.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?")
-      .bind(now, existing.id)
-      .run();
     return { actor: existing, setCookie: null };
   }
 
@@ -72,10 +68,10 @@ export async function ensureIdentity(request: Request, db: D1Database): Promise<
   const token = crypto.randomUUID();
   const tokenHash = await hashText(`openquest-session:${token}`);
   await db.prepare(
-    "INSERT INTO sessions (id, token_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?)",
-  ).bind(id, tokenHash, now, now).run();
+    "INSERT INTO sessions (id, token_hash, created_at) VALUES (?, ?, ?)",
+  ).bind(id, tokenHash, now).run();
   return {
-    actor: { id, label: publicActorLabel(id) },
+    actor: { id },
     setCookie: sessionSetCookie(token, request),
   };
 }

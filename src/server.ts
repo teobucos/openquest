@@ -14,8 +14,8 @@ import {
   createQuest,
   getContribution,
   getQuest,
-  getWorld,
   nextWork,
+  observeState,
   reviewContribution,
   submitContribution,
 } from "./store";
@@ -57,7 +57,16 @@ function json<Value>(value: Value, status = 200, setCookie?: string | null): Res
 }
 
 async function parseBody<Input>(request: Request, schema: z.ZodType<Input>): Promise<Input> {
-  return schema.parse(await request.json());
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch (cause) {
+    if (cause instanceof SyntaxError) {
+      fail(400, "invalid_input", "Request body must be valid JSON.");
+    }
+    throw cause;
+  }
+  return schema.parse(body);
 }
 
 async function writeIdentity(request: Request, env: Env) {
@@ -73,7 +82,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET" && url.pathname === "/api/world") {
     const limit = worldLimitSchema.parse(url.searchParams.get("limit") ?? undefined);
     const questId = identifierQuerySchema.parse(url.searchParams.get("quest_id") ?? undefined);
-    return json(await getWorld(env.DB, questId, limit));
+    return json(await observeState(env.DB, questId, limit));
   }
 
   const questMatch = /^\/api\/quests\/([^/]+)$/.exec(url.pathname);
