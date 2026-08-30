@@ -57,7 +57,10 @@ function fail(
 }
 
 function json<Value>(value: Value, status = 200, setCookie?: string | null): Response {
-  const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
+  const headers = new Headers({
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8",
+  });
   if (setCookie) headers.append("set-cookie", setCookie);
   return new Response(JSON.stringify(value), { status, headers });
 }

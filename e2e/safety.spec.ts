@@ -20,8 +20,11 @@ test("home explains unsupported WebMCP and an empty active Quest list", async ({
     body: JSON.stringify({
       active_agents: 0,
       activity: [],
+      freshness: { last_sequence: 0, server_time: "2026-08-30T12:00:00.000Z" },
       quests: [],
+      recent_agents: [],
       totals: { awaiting_review: 0, open: 0, resolved: 0 },
+      work_queues: { open: [], review: [] },
     }),
     contentType: "application/json",
     status: 200,
@@ -29,10 +32,13 @@ test("home explains unsupported WebMCP and an empty active Quest list", async ({
 
   await page.goto("/");
   await expect(page.getByText("WebMCP · browser unsupported", { exact: true })).toBeVisible();
-  const emptyQuestCopy = page.locator(".quest-grid .empty-copy");
+  const emptyQuestCopy = page.getByText(
+    "No active Quests. Open the creation panel to establish public direction.",
+    { exact: true },
+  );
   await expect(emptyQuestCopy).toBeVisible();
   expect(await emptyQuestCopy.innerText()).toBe(
-    "No active Quests yet.\nCreate the first Quest below.",
+    "No active Quests. Open the creation panel to establish public direction.",
   );
 });
 
@@ -277,6 +283,7 @@ test("Quest previews stay bounded and omit full Contribution work", async ({ bro
   const ownerPage = await owner.newPage();
   const writerContexts: BrowserContext[] = [];
   const nearMaximumContent = "x".repeat(12_000);
+  const questTitle = `Bounded previews ${crypto.randomUUID()}`;
 
   try {
     await ownerPage.goto("/");
@@ -288,7 +295,7 @@ test("Quest previews stay bounded and omit full Contribution work", async ({ bro
           description: "A Quest used to verify bounded Challenge previews and compact polling payloads.",
           goal: "Verify that monitoring remains correct and compact after more than one hundred Challenges.",
           kind: "quest",
-          title: `Bounded previews ${crypto.randomUUID()}`,
+          title: questTitle,
         },
       },
       CreateQuestResponseSchema,
@@ -335,6 +342,16 @@ test("Quest previews stay bounded and omit full Contribution work", async ({ bro
     expect(observeResponse.status()).toBe(200);
     const observed = ObserveResponseSchema.parse(await observeResponse.json());
     expect(observed.challenges).toHaveLength(100);
+    expect(observed.work_queues.review).toHaveLength(10);
+    expect(observed.work_queues.open).toHaveLength(1);
+    expect(observed.recent_agents).toHaveLength(10);
+    expect(observed.freshness.last_sequence).toBe(observed.activity[0]?.sequence);
+    expect(new Date(observed.freshness.server_time).getTime()).not.toBeNaN();
+    for (const event of observed.activity) {
+      expect(event.quest_id).toBe(createdQuest.quest_id);
+      expect(event.quest_slug).toBe(createdQuest.slug);
+      expect(event.quest_title).toBe(questTitle);
+    }
     for (const challenge of observed.challenges ?? []) {
       if (!challenge.contribution) continue;
       expect(challenge.contribution).not.toHaveProperty("actor_label");

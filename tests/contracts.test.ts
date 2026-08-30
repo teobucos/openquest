@@ -6,13 +6,16 @@ import {
   CreateChallengeInputSchema,
   CreateQuestInputSchema,
   EventSchema,
+  FreshnessSchema,
   GetNextWorkInputSchema,
   ObserveInputSchema,
   ObserveResponseSchema,
   ProposeInputSchema,
+  RecentlyActiveAgentSchema,
   ReviewContributionInputSchema,
   SubmitContributionInputSchema,
   WebMCPToolInputJsonSchemas,
+  WorkQueuesSchema,
 } from "../src/contracts";
 
 describe("OpenQuest public contracts", () => {
@@ -160,6 +163,8 @@ describe("OpenQuest public contracts", () => {
       EventSchema.safeParse({
         sequence: 1,
         quest_id: "quest_research",
+        quest_slug: "open-research",
+        quest_title: "Open Research Quest",
         entity_id: "challenge_1",
         event_type: "challenge.created",
         actor_label: null,
@@ -196,11 +201,17 @@ describe("OpenQuest public contracts", () => {
       created_at: timestamp,
       updated_at: timestamp,
     };
+    const commandCenter = {
+      recent_agents: [],
+      work_queues: { review: [], open: [] },
+      freshness: { server_time: timestamp, last_sequence: 0 },
+    };
 
     const unscopedObservation = ObserveResponseSchema.parse({
       quests: [{ ...quest, counts: { open: 0, awaiting_review: 1, resolved: 0 }, active_agents: 1 }],
       totals: { open: 0, awaiting_review: 1, resolved: 0 },
       active_agents: 1,
+      ...commandCenter,
       activity: [],
     });
     expect(unscopedObservation).not.toHaveProperty("challenges");
@@ -209,6 +220,7 @@ describe("OpenQuest public contracts", () => {
       quests: [{ ...quest, counts: { open: 0, awaiting_review: 1, resolved: 0 }, active_agents: 1 }],
       totals: { open: 0, awaiting_review: 1, resolved: 0 },
       active_agents: 1,
+      ...commandCenter,
       challenges: [],
       activity: [],
     });
@@ -218,6 +230,7 @@ describe("OpenQuest public contracts", () => {
         quests: [],
         totals: { open: 0, awaiting_review: 0, resolved: 0 },
         active_agents: 0,
+        ...commandCenter,
         activity: [],
         suggested_next: "Call openquest_next.",
       }).success,
@@ -242,6 +255,66 @@ describe("OpenQuest public contracts", () => {
     ).toBe(true);
   });
 
+  it("keeps command-center activity truthful, closed, and bounded", () => {
+    const timestamp = "2026-08-30T12:00:00.000Z";
+    const quest = {
+      id: "quest_research",
+      slug: "open-research",
+      title: "Open Research Quest",
+    };
+    const agent = {
+      actor_label: "Agent A1B2C3D4",
+      quest,
+      last_event: "contribution.created" as const,
+      last_entity_id: "contribution_1",
+      last_summary: "Contribution submitted: Cross-check one claim",
+      last_seen: timestamp,
+      activity_count: 2,
+    };
+    expect(RecentlyActiveAgentSchema.safeParse(agent).success).toBe(true);
+    expect(
+      RecentlyActiveAgentSchema.safeParse({ ...agent, last_event: "quest.created" }).success,
+    ).toBe(false);
+    expect(
+      RecentlyActiveAgentSchema.safeParse({ ...agent, session_id: "private" }).success,
+    ).toBe(false);
+
+    const reviewItem = {
+      work_type: "review" as const,
+      quest,
+      challenge: {
+        id: "challenge_1",
+        title: "Cross-check one claim",
+        description: "Compare the claim directly with its cited primary source.",
+        created_at: timestamp,
+        status: "awaiting_review" as const,
+      },
+      contribution: {
+        id: "contribution_1",
+        actor_label: "Agent A1B2C3D4",
+        summary: "A public result",
+        created_at: timestamp,
+      },
+    };
+    const openItem = {
+      work_type: "contribute" as const,
+      quest,
+      challenge: {
+        id: "challenge_2",
+        title: "Document another source",
+        description: "Find and document another reliable public primary source.",
+        created_at: timestamp,
+        status: "open" as const,
+      },
+    };
+    expect(WorkQueuesSchema.safeParse({ review: [reviewItem], open: [openItem] }).success).toBe(true);
+    expect(
+      WorkQueuesSchema.safeParse({ review: Array.from({ length: 11 }, () => reviewItem), open: [] }).success,
+    ).toBe(false);
+    expect(FreshnessSchema.safeParse({ server_time: timestamp, last_sequence: 0 }).success).toBe(true);
+    expect(FreshnessSchema.safeParse({ server_time: timestamp, last_sequence: -1 }).success).toBe(false);
+  });
+
   it("publishes exactly five canonical WebMCP input schemas", () => {
     expect(Object.keys(WebMCPToolInputJsonSchemas).sort()).toEqual([
       "openquest_next",
@@ -260,7 +333,7 @@ describe("OpenQuest public contracts", () => {
       maxLength: 12_000,
     });
     expect(WebMCPToolInputJsonSchemas.openquest_observe.properties?.limit).toMatchObject({
-      description: "Maximum active Quests and recent activity entries to return. Scoped Challenge previews use a separate fixed 100-item bound.",
+      description: "Maximum active Quests and recent activity entries to return. Challenge previews, recent agents, and work queues use separate fixed bounds.",
     });
     expect(WebMCPToolInputJsonSchemas.openquest_observe.properties?.quest_id).toMatchObject({
       description: "Canonical Quest ID returned by OpenQuest. Do not use the human-readable URL slug.",
