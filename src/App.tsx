@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { ApiError, createQuest, getContribution, getQuest, getWorld } from "./api";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ApiError, createQuest, getContribution, getQuest, observe } from "./api";
 import type {
   ContributionResponse,
+  ObserveResponse,
   QuestResponse,
-  WorldResponse,
 } from "./contracts";
 import { useWebMCPTools, type WebMCPToolsState } from "./useWebMCPTools";
 
-type RemoteDataState<Value> = { data: Value | null; error: string | null };
+interface RemoteDataState<Value> {
+  data: Value | null;
+  error: string | null;
+  loading: boolean;
+  refreshError: string | null;
+}
 type ThemePreference = "system" | "light" | "dark";
-type PublicEvent = WorldResponse["activity"][number];
+type PublicEvent = ObserveResponse["activity"][number];
 
 const themeStorageKey = "openquest-theme";
 
@@ -65,15 +70,26 @@ function readableError(cause: unknown): string {
 }
 
 function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: number) {
-  const [{ data, error }, setState] = useState<RemoteDataState<Value>>({
+  const [{ data, error, loading, refreshError }, setState] = useState<RemoteDataState<Value>>({
     data: null,
     error: null,
+    loading: true,
+    refreshError: null,
   });
+  const running = useRef(false);
   const reload = useCallback(async () => {
+    if (running.current) return;
+    running.current = true;
     try {
-      setState({ data: await request(), error: null });
+      const next = await request();
+      setState({ data: next, error: null, loading: false, refreshError: null });
     } catch (cause: unknown) {
-      setState((current) => ({ ...current, error: readableError(cause) }));
+      const message = readableError(cause);
+      setState((current) => current.data
+        ? { ...current, loading: false, refreshError: message }
+        : { ...current, error: message, loading: false, refreshError: null });
+    } finally {
+      running.current = false;
     }
   }, [request]);
 
@@ -88,7 +104,13 @@ function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: number)
       window.removeEventListener("openquest:changed", refresh);
     };
   }, [refreshMs, reload]);
-  return { data, error, reload };
+  return { data, error, loading, refreshError, reload };
+}
+
+function PollingStatus({ refreshError }: { refreshError: string | null }) {
+  return refreshError
+    ? <span className="live-pulse is-degraded" title={refreshError}>Connection issue</span>
+    : <span className="live-pulse">POLLING LIVE</span>;
 }
 
 function ToolStatus({ tools }: { tools: WebMCPToolsState }) {
@@ -144,7 +166,12 @@ function ErrorPanel({ message, retry }: { message: string; retry: () => void }) 
 
 function ActivityList({ activity }: { activity: PublicEvent[] }) {
   return (
-    <div className="activity-list" data-testid="activity-list">
+    <div
+      className="activity-list"
+      data-testid="activity-list"
+      aria-live="polite"
+      aria-relevant="additions text"
+    >
       {activity.length === 0 ? (
         <p className="empty-copy">No public activity yet.</p>
       ) : activity.map((event) => (
@@ -152,7 +179,7 @@ function ActivityList({ activity }: { activity: PublicEvent[] }) {
           <span className="activity-icon">›</span>
           <div>
             <strong>{event.summary}</strong>
-            <span>{event.actor_label ?? "OpenQuest seed"}</span>
+            <span>{event.actor_label ?? "OpenQuest"}</span>
           </div>
           <time dateTime={event.created_at}>
             {new Date(event.created_at).toLocaleTimeString([], { hour12: false })}
@@ -215,9 +242,10 @@ function CreateQuestForm() {
 }
 
 function HomePage() {
-  const request = useCallback(() => getWorld(), []);
-  const { data, error, reload } = useRemoteData<WorldResponse>(request, 1_500);
+  const request = useCallback(() => observe({}), []);
+  const { data, error, loading, refreshError, reload } = useRemoteData<ObserveResponse>(request, 1_500);
   if (error && !data) return <ErrorPanel message={error} retry={reload} />;
+  if (loading && !data) return <Loading />;
   if (!data) return <Loading />;
   return (
     <main>
@@ -262,7 +290,7 @@ function HomePage() {
       <section className="section-block activity-block">
         <div className="section-heading">
           <div><span className="eyebrow">LIVE ACTIVITY</span><h2>Shared public state</h2></div>
-          <span className="live-pulse">POLLING LIVE</span>
+          <PollingStatus refreshError={refreshError} />
         </div>
         <ActivityList activity={data.activity} />
       </section>
@@ -277,9 +305,11 @@ function statusLabel(status: QuestResponse["challenges"][number]["status"]): str
 
 function QuestPage({ slug }: { slug: string }) {
   const request = useCallback(() => getQuest(slug), [slug]);
-  const { data, error, reload } = useRemoteData<QuestResponse>(request, 1_250);
+  const { data, error, loading, refreshError, reload } = useRemoteData<QuestResponse>(request, 1_250);
   if (error && !data) return <ErrorPanel message={error} retry={reload} />;
+  if (loading && !data) return <Loading />;
   if (!data) return <Loading />;
+  const totalChallenges = data.counts.open + data.counts.awaiting_review + data.counts.resolved;
   return (
     <main>
       <section className="quest-hero">
@@ -302,15 +332,18 @@ function QuestPage({ slug }: { slug: string }) {
         <div className="monitor-activity">
           <div className="section-heading compact">
             <div><span className="eyebrow">LIVE ACTIVITY</span><h2>Quest log</h2></div>
-            <span className="live-pulse">POLLING LIVE</span>
+            <PollingStatus refreshError={refreshError} />
           </div>
           <ActivityList activity={data.activity} />
         </div>
         <div className="frontier">
           <div className="section-heading compact">
             <div><span className="eyebrow">CURRENT FRONTIER</span><h2>Challenges</h2></div>
-            <span className="section-count">{data.challenges.length}</span>
+            <span className="section-count">{totalChallenges}</span>
           </div>
+          {totalChallenges > data.challenges.length && (
+            <p className="preview-count">Showing {data.challenges.length} of {totalChallenges} Challenges</p>
+          )}
           <div className="challenge-list">
             {data.challenges.map((challenge) => (
               <article className="challenge-row" key={challenge.id} data-status={challenge.status}>
@@ -341,7 +374,7 @@ function EvidenceLinks({ evidence }: { evidence: ContributionResponse["contribut
     <ul className="evidence-list">
       {evidence.map((item) => (
         <li key={`${item.url}-${item.title}`}>
-          <a href={item.url} rel="noreferrer" target="_blank">{item.title || item.url} ↗</a>
+          <a href={item.url} rel="noreferrer" target="_blank">{item.title} ↗</a>
           {item.note && <p>{item.note}</p>}
         </li>
       ))}
@@ -351,8 +384,9 @@ function EvidenceLinks({ evidence }: { evidence: ContributionResponse["contribut
 
 function ContributionPage({ id }: { id: string }) {
   const request = useCallback(() => getContribution(id), [id]);
-  const { data, error, reload } = useRemoteData<ContributionResponse>(request);
+  const { data, error, loading, reload } = useRemoteData<ContributionResponse>(request);
   if (error && !data) return <ErrorPanel message={error} retry={reload} />;
+  if (loading && !data) return <Loading />;
   if (!data) return <Loading />;
   return (
     <main className="detail-page">
@@ -393,11 +427,20 @@ function ContributionPage({ id }: { id: string }) {
   );
 }
 
+function NotFoundPage() {
+  return (
+    <main className="error-panel">
+      <h1>Not found</h1>
+      <a className="back-link" href="/">← Back to OpenQuest</a>
+    </main>
+  );
+}
+
 export default function App() {
   const tools = useWebMCPTools();
   const quest = /^\/q\/([^/]+)$/.exec(window.location.pathname);
   const contribution = /^\/contributions\/([^/]+)$/.exec(window.location.pathname);
-  let page: ReactNode = <HomePage />;
+  let page: ReactNode = window.location.pathname === "/" ? <HomePage /> : <NotFoundPage />;
   if (quest) page = <QuestPage slug={decodeURIComponent(quest[1])} />;
   if (contribution) page = <ContributionPage id={decodeURIComponent(contribution[1])} />;
   return <Shell tools={tools}>{page}</Shell>;

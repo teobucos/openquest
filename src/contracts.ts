@@ -21,13 +21,18 @@ const QuestGoalSchema = z.string().trim().min(10).max(2_000);
 const QuestDescriptionSchema = z.string().trim().max(6_000);
 const ChallengeDescriptionSchema = z.string().trim().min(10).max(2_000);
 const ContributionSummarySchema = z.string().trim().min(1).max(800);
-const ContributionContentSchema = z.string().min(1).max(12_000);
+const ContributionContentSchema = z
+  .string()
+  .max(12_000)
+  .refine((value) => value.trim().length > 0, {
+    message: "Contribution content cannot be empty.",
+  });
 const ReviewReasonSchema = z.string().trim().min(1).max(1_000);
 
 export const EvidenceSchema = z
   .object({
     url: z.httpUrl().max(2_048),
-    title: z.string().trim().max(200),
+    title: z.string().trim().min(1).max(200),
     note: z.string().trim().max(400).optional(),
   })
   .strict();
@@ -56,7 +61,6 @@ export const ChallengeSchema = z
   .object({
     id: IdentifierSchema,
     quest_id: IdentifierSchema,
-    parent_challenge_id: IdentifierSchema.nullable(),
     title: TitleSchema,
     description: ChallengeDescriptionSchema,
     status: ChallengeStatusSchema,
@@ -73,6 +77,15 @@ export const ContributionSchema = z
     summary: ContributionSummarySchema,
     content: ContributionContentSchema,
     evidence: EvidenceListSchema,
+    status: ContributionStatusSchema,
+    created_at: IsoTimestampSchema,
+  })
+  .strict();
+
+export const ContributionPreviewSchema = z
+  .object({
+    id: IdentifierSchema,
+    summary: ContributionSummarySchema,
     status: ContributionStatusSchema,
     created_at: IsoTimestampSchema,
   })
@@ -102,7 +115,6 @@ export const EventSchema = z
   .object({
     sequence: z.number().int().positive(),
     quest_id: IdentifierSchema,
-    entity_type: z.enum(["quest", "challenge", "contribution", "review"]),
     entity_id: IdentifierSchema,
     event_type: EventTypeSchema,
     actor_label: ActorLabelSchema.nullable(),
@@ -111,7 +123,7 @@ export const EventSchema = z
   })
   .strict();
 
-export const ObserveQuestsInputSchema = z
+export const ObserveInputSchema = z
   .object({
     quest_id: IdentifierSchema.optional(),
     limit: z.number().int().min(1).max(20).default(10),
@@ -156,7 +168,6 @@ export const CreateChallengeInputSchema = z
     quest_id: IdentifierSchema,
     title: TitleSchema,
     description: ChallengeDescriptionSchema,
-    parent_challenge_id: IdentifierSchema.optional(),
   })
   .strict();
 
@@ -175,7 +186,6 @@ const ProposeChallengeInputSchema = z
     quest_id: IdentifierSchema,
     title: TitleSchema,
     description: ChallengeDescriptionSchema,
-    parent_challenge_id: IdentifierSchema.optional(),
   })
   .strict();
 
@@ -198,10 +208,10 @@ export const QuestCardSchema = QuestSchema.extend({
 }).strict();
 
 export const ChallengeWithContributionSchema = ChallengeSchema.extend({
-  contribution: ContributionSchema.nullable(),
+  contribution: ContributionPreviewSchema.nullable(),
 }).strict();
 
-export const ObserveQuestsResponseSchema = z
+export const ObserveResponseSchema = z
   .object({
     quests: z.array(QuestCardSchema).max(20),
     totals: QuestCountsSchema,
@@ -357,7 +367,6 @@ export const ApiErrorResponseSchema = z
       "challenge_unavailable",
       "contribution_unavailable",
       "self_review_forbidden",
-      "duplicate_review",
       "rate_limited",
       "conflict",
       "error",
@@ -368,32 +377,40 @@ export const ApiErrorResponseSchema = z
   .strict();
 
 export const WebMCPToolInputJsonSchemas = {
-  openquest_observe: z.toJSONSchema(ObserveQuestsInputSchema, { io: "input", target: "draft-7" }),
+  openquest_observe: z.toJSONSchema(ObserveInputSchema, { io: "input", target: "draft-7" }),
   openquest_next: z.toJSONSchema(GetNextWorkInputSchema, { io: "input", target: "draft-7" }),
   openquest_submit: z.toJSONSchema(SubmitContributionInputSchema, { io: "input", target: "draft-7" }),
   openquest_review: z.toJSONSchema(ReviewContributionInputSchema, { io: "input", target: "draft-7" }),
   openquest_propose: z.toJSONSchema(ProposeInputSchema, { io: "input", target: "draft-7" }),
 } as const;
 
-export type Quest = z.infer<typeof QuestSchema>;
-export type Challenge = z.infer<typeof ChallengeSchema>;
-export type Contribution = z.infer<typeof ContributionSchema>;
-export type Review = z.infer<typeof ReviewSchema>;
-export type ObserveQuestsInput = z.infer<typeof ObserveQuestsInputSchema>;
-export type GetNextWorkInput = z.infer<typeof GetNextWorkInputSchema>;
-export type SubmitContributionInput = z.infer<typeof SubmitContributionInputSchema>;
-export type ReviewContributionInput = z.infer<typeof ReviewContributionInputSchema>;
-export type CreateQuestInput = z.infer<typeof CreateQuestInputSchema>;
-export type CreateChallengeInput = z.infer<typeof CreateChallengeInputSchema>;
-export type ProposeInput = z.infer<typeof ProposeInputSchema>;
-export type ObserveQuestsResponse = z.infer<typeof ObserveQuestsResponseSchema>;
-export type WorldResponse = ObserveQuestsResponse;
-export type QuestResponse = z.infer<typeof QuestResponseSchema>;
-export type ContributionResponse = z.infer<typeof ContributionResponseSchema>;
-export type GetNextWorkResponse = z.infer<typeof GetNextWorkResponseSchema>;
-export type SubmitContributionResponse = z.infer<typeof SubmitContributionResponseSchema>;
-export type ReviewContributionResponse = z.infer<typeof ReviewContributionResponseSchema>;
-export type CreateQuestResponse = z.infer<typeof CreateQuestResponseSchema>;
-export type CreateChallengeResponse = z.infer<typeof CreateChallengeResponseSchema>;
-export type ProposeResponse = z.infer<typeof ProposeResponseSchema>;
-export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
+export type Quest = z.output<typeof QuestSchema>;
+export type Challenge = z.output<typeof ChallengeSchema>;
+export type Contribution = z.output<typeof ContributionSchema>;
+export type ContributionPreview = z.output<typeof ContributionPreviewSchema>;
+export type Review = z.output<typeof ReviewSchema>;
+export type Event = z.output<typeof EventSchema>;
+export type ObserveInput = z.input<typeof ObserveInputSchema>;
+export type ObserveOutput = z.output<typeof ObserveInputSchema>;
+export type GetNextWorkInput = z.input<typeof GetNextWorkInputSchema>;
+export type GetNextWorkOutput = z.output<typeof GetNextWorkInputSchema>;
+export type SubmitContributionInput = z.input<typeof SubmitContributionInputSchema>;
+export type SubmitContributionOutput = z.output<typeof SubmitContributionInputSchema>;
+export type ReviewContributionInput = z.input<typeof ReviewContributionInputSchema>;
+export type ReviewContributionOutput = z.output<typeof ReviewContributionInputSchema>;
+export type CreateQuestInput = z.input<typeof CreateQuestInputSchema>;
+export type CreateQuestOutput = z.output<typeof CreateQuestInputSchema>;
+export type CreateChallengeInput = z.input<typeof CreateChallengeInputSchema>;
+export type CreateChallengeOutput = z.output<typeof CreateChallengeInputSchema>;
+export type ProposeInput = z.input<typeof ProposeInputSchema>;
+export type ProposeOutput = z.output<typeof ProposeInputSchema>;
+export type ObserveResponse = z.output<typeof ObserveResponseSchema>;
+export type QuestResponse = z.output<typeof QuestResponseSchema>;
+export type ContributionResponse = z.output<typeof ContributionResponseSchema>;
+export type GetNextWorkResponse = z.output<typeof GetNextWorkResponseSchema>;
+export type SubmitContributionResponse = z.output<typeof SubmitContributionResponseSchema>;
+export type ReviewContributionResponse = z.output<typeof ReviewContributionResponseSchema>;
+export type CreateQuestResponse = z.output<typeof CreateQuestResponseSchema>;
+export type CreateChallengeResponse = z.output<typeof CreateChallengeResponseSchema>;
+export type ProposeResponse = z.output<typeof ProposeResponseSchema>;
+export type ApiErrorResponse = z.output<typeof ApiErrorResponseSchema>;

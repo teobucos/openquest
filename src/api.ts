@@ -5,7 +5,7 @@ import {
   CreateChallengeResponseSchema,
   CreateQuestResponseSchema,
   GetNextWorkResponseSchema,
-  ObserveQuestsResponseSchema,
+  ObserveResponseSchema,
   QuestResponseSchema,
   ReviewContributionResponseSchema,
   SubmitContributionResponseSchema,
@@ -17,16 +17,13 @@ import {
   type CreateQuestResponse,
   type GetNextWorkInput,
   type GetNextWorkResponse,
-  type ObserveQuestsInput,
-  type ObserveQuestsResponse,
-  type ProposeInput,
-  type ProposeResponse,
+  type ObserveInput,
+  type ObserveResponse,
   type QuestResponse,
   type ReviewContributionInput,
   type ReviewContributionResponse,
   type SubmitContributionInput,
   type SubmitContributionResponse,
-  type WorldResponse,
 } from "./contracts";
 
 export class ApiError extends Error {
@@ -74,16 +71,12 @@ function postBody<Value>(value: Value, signal?: AbortSignal): RequestOptions {
   return { body: JSON.stringify(value), method: "POST", signal };
 }
 
-function worldQuery(questId: string | undefined, limit?: number): string {
+function observeQuery(questId: string | undefined, limit?: number): string {
   const parameters = new URLSearchParams();
   if (questId) parameters.set("quest_id", questId);
   if (limit) parameters.set("limit", String(limit));
   const query = parameters.toString();
   return query ? `/api/world?${query}` : "/api/world";
-}
-
-export function getWorld(questId?: string, signal?: AbortSignal): Promise<WorldResponse> {
-  return request(worldQuery(questId), ObserveQuestsResponseSchema, { signal });
 }
 
 export function getQuest(slug: string, signal?: AbortSignal): Promise<QuestResponse> {
@@ -101,13 +94,13 @@ export function getContribution(
   );
 }
 
-export function observeQuests(
-  input: ObserveQuestsInput,
+export function observe(
+  input: ObserveInput = {},
   signal?: AbortSignal,
-): Promise<ObserveQuestsResponse> {
+): Promise<ObserveResponse> {
   return request(
-    worldQuery(input.quest_id, input.limit),
-    ObserveQuestsResponseSchema,
+    observeQuery(input.quest_id, input.limit),
+    ObserveResponseSchema,
     { signal },
   );
 }
@@ -152,26 +145,5 @@ export function reviewContribution(
     "/api/reviews",
     ReviewContributionResponseSchema,
     postBody(input, signal),
-  );
-}
-
-export function propose(
-  input: ProposeInput,
-  signal?: AbortSignal,
-): Promise<ProposeResponse> {
-  if (input.kind === "quest") {
-    return createQuest(
-      { title: input.title, goal: input.goal, description: input.description },
-      signal,
-    );
-  }
-  return createChallenge(
-    {
-      quest_id: input.quest_id,
-      title: input.title,
-      description: input.description,
-      parent_challenge_id: input.parent_challenge_id,
-    },
-    signal,
   );
 }

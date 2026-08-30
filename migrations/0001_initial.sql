@@ -29,7 +29,6 @@ CREATE TABLE quests (
 CREATE TABLE challenges (
   id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
   quest_id TEXT NOT NULL REFERENCES quests(id) ON DELETE CASCADE,
-  parent_challenge_id TEXT REFERENCES challenges(id) ON DELETE SET NULL,
   title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 3 AND 160),
   description TEXT NOT NULL CHECK (length(trim(description)) BETWEEN 10 AND 2000),
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'awaiting_review', 'resolved')),
@@ -56,7 +55,7 @@ CREATE TABLE contributions (
 
 CREATE TABLE reviews (
   id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
-  contribution_id TEXT NOT NULL REFERENCES contributions(id) ON DELETE CASCADE,
+  contribution_id TEXT NOT NULL UNIQUE REFERENCES contributions(id) ON DELETE CASCADE,
   reviewer_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE RESTRICT,
   verdict TEXT NOT NULL CHECK (verdict IN ('support', 'challenge')),
   reason TEXT NOT NULL CHECK (length(trim(reason)) BETWEEN 1 AND 1000),
@@ -66,16 +65,12 @@ CREATE TABLE reviews (
     AND json_array_length(evidence_json) <= 5
     AND length(evidence_json) <= 14000
   ),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  UNIQUE (contribution_id, reviewer_session_id)
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE TABLE events (
   sequence INTEGER PRIMARY KEY AUTOINCREMENT,
   quest_id TEXT NOT NULL REFERENCES quests(id) ON DELETE CASCADE,
-  entity_type TEXT NOT NULL CHECK (
-    entity_type IN ('quest', 'challenge', 'contribution', 'review')
-  ),
   entity_id TEXT NOT NULL CHECK (length(entity_id) BETWEEN 1 AND 128),
   event_type TEXT NOT NULL CHECK (
     event_type IN (
@@ -87,20 +82,14 @@ CREATE TABLE events (
     )
   ),
   actor_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
-  payload_json TEXT NOT NULL DEFAULT '{}' CHECK (
-    json_valid(payload_json)
-    AND json_type(payload_json) = 'object'
-    AND length(payload_json) <= 4000
-  ),
+  summary TEXT NOT NULL CHECK (length(trim(summary)) BETWEEN 1 AND 500),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE TABLE rate_limits (
-  bucket_key TEXT NOT NULL CHECK (length(bucket_key) BETWEEN 1 AND 255),
-  window_started_at TEXT NOT NULL,
-  request_count INTEGER NOT NULL DEFAULT 0 CHECK (request_count BETWEEN 0 AND 10000),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  PRIMARY KEY (bucket_key, window_started_at)
+  bucket_key TEXT PRIMARY KEY CHECK (length(bucket_key) BETWEEN 1 AND 255),
+  window INTEGER NOT NULL,
+  request_count INTEGER NOT NULL CHECK (request_count BETWEEN 0 AND 10000)
 );
 
 CREATE INDEX challenges_by_quest_status_created
@@ -111,8 +100,6 @@ CREATE INDEX contributions_by_status_created
   ON contributions (status, created_at ASC);
 CREATE INDEX contributions_by_session_created
   ON contributions (session_id, created_at DESC);
-CREATE INDEX reviews_by_contribution_created
-  ON reviews (contribution_id, created_at ASC);
 CREATE INDEX events_by_quest_sequence
   ON events (quest_id, sequence ASC);
 CREATE INDEX events_by_activity_created
@@ -124,18 +111,16 @@ FOR EACH ROW
 BEGIN
   INSERT INTO events (
     quest_id,
-    entity_type,
     entity_id,
     event_type,
     actor_session_id,
-    payload_json
+    summary
   ) VALUES (
     NEW.id,
-    'quest',
     NEW.id,
     'quest.created',
     NEW.created_by_session_id,
-    json_object('quest_title', NEW.title)
+    'New Quest: ' || NEW.title
   );
 END;
 
@@ -145,18 +130,16 @@ FOR EACH ROW
 BEGIN
   INSERT INTO events (
     quest_id,
-    entity_type,
     entity_id,
     event_type,
     actor_session_id,
-    payload_json
+    summary
   ) VALUES (
     NEW.quest_id,
-    'challenge',
     NEW.id,
     'challenge.created',
     NEW.created_by_session_id,
-    json_object('challenge_title', NEW.title)
+    'New Challenge: ' || NEW.title
   );
 END;
 
@@ -170,7 +153,7 @@ BEGIN
   SELECT RAISE(ABORT, 'challenge_unavailable');
 END;
 
-CREATE TRIGGER contributions_update_challenge_and_event
+CREATE TRIGGER contributions_apply
 AFTER INSERT ON contributions
 FOR EACH ROW
 BEGIN
@@ -182,66 +165,64 @@ BEGIN
 
   INSERT INTO events (
     quest_id,
-    entity_type,
     entity_id,
     event_type,
     actor_session_id,
-    payload_json
+    summary
   )
   SELECT
     quest_id,
-    'contribution',
     NEW.id,
     'contribution.created',
     NEW.session_id,
-    json_object(
-      'challenge_id', NEW.challenge_id,
-      'challenge_title', title,
-      'contribution_summary', NEW.summary
-    )
+    'Contribution submitted: ' || title
   FROM challenges
   WHERE id = NEW.challenge_id;
 END;
 
-CREATE TRIGGER reviews_require_pending_contribution
+CREATE TRIGGER reviews_validate
 BEFORE INSERT ON reviews
 FOR EACH ROW
-WHEN NOT EXISTS (
-  SELECT 1
-  FROM contributions
-  JOIN challenges ON challenges.id = contributions.challenge_id
-  WHERE contributions.id = NEW.contribution_id
-    AND contributions.status = 'pending'
-    AND challenges.status = 'awaiting_review'
-)
 BEGIN
-  SELECT RAISE(ABORT, 'contribution_unavailable');
+  SELECT CASE
+    WHEN NOT EXISTS (
+      SELECT 1
+      FROM contributions
+      JOIN challenges ON challenges.id = contributions.challenge_id
+      WHERE contributions.id = NEW.contribution_id
+        AND contributions.status = 'pending'
+        AND challenges.status = 'awaiting_review'
+    )
+    THEN RAISE(ABORT, 'contribution_unavailable')
+  END;
+
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1
+      FROM contributions
+      WHERE id = NEW.contribution_id AND session_id = NEW.reviewer_session_id
+    )
+    THEN RAISE(ABORT, 'self_review_forbidden')
+  END;
 END;
 
-CREATE TRIGGER reviews_reject_self_review
-BEFORE INSERT ON reviews
-FOR EACH ROW
-WHEN EXISTS (
-  SELECT 1
-  FROM contributions
-  WHERE id = NEW.contribution_id AND session_id = NEW.reviewer_session_id
-)
-BEGIN
-  SELECT RAISE(ABORT, 'self_review_forbidden');
-END;
-
-CREATE TRIGGER reviews_support_resolves_challenge
+CREATE TRIGGER reviews_apply
 AFTER INSERT ON reviews
 FOR EACH ROW
-WHEN NEW.verdict = 'support'
 BEGIN
   UPDATE contributions
-  SET status = 'accepted'
+  SET status = CASE NEW.verdict
+    WHEN 'support' THEN 'accepted'
+    WHEN 'challenge' THEN 'challenged'
+  END
   WHERE id = NEW.contribution_id;
 
   UPDATE challenges
   SET
-    status = 'resolved',
+    status = CASE NEW.verdict
+      WHEN 'support' THEN 'resolved'
+      WHEN 'challenge' THEN 'open'
+    END,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
   WHERE id = (
     SELECT challenge_id FROM contributions WHERE id = NEW.contribution_id
@@ -249,64 +230,23 @@ BEGIN
 
   INSERT INTO events (
     quest_id,
-    entity_type,
     entity_id,
     event_type,
     actor_session_id,
-    payload_json
+    summary
   )
   SELECT
     challenges.quest_id,
-    'review',
     NEW.id,
-    'review.supported',
+    CASE NEW.verdict
+      WHEN 'support' THEN 'review.supported'
+      WHEN 'challenge' THEN 'review.challenged'
+    END,
     NEW.reviewer_session_id,
-    json_object(
-      'contribution_id', NEW.contribution_id,
-      'challenge_id', challenges.id,
-      'challenge_title', challenges.title
-    )
-  FROM contributions
-  JOIN challenges ON challenges.id = contributions.challenge_id
-  WHERE contributions.id = NEW.contribution_id;
-END;
-
-CREATE TRIGGER reviews_challenge_reopens_challenge
-AFTER INSERT ON reviews
-FOR EACH ROW
-WHEN NEW.verdict = 'challenge'
-BEGIN
-  UPDATE contributions
-  SET status = 'challenged'
-  WHERE id = NEW.contribution_id;
-
-  UPDATE challenges
-  SET
-    status = 'open',
-    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-  WHERE id = (
-    SELECT challenge_id FROM contributions WHERE id = NEW.contribution_id
-  );
-
-  INSERT INTO events (
-    quest_id,
-    entity_type,
-    entity_id,
-    event_type,
-    actor_session_id,
-    payload_json
-  )
-  SELECT
-    challenges.quest_id,
-    'review',
-    NEW.id,
-    'review.challenged',
-    NEW.reviewer_session_id,
-    json_object(
-      'contribution_id', NEW.contribution_id,
-      'challenge_id', challenges.id,
-      'challenge_title', challenges.title
-    )
+    CASE NEW.verdict
+      WHEN 'support' THEN 'Resolved: ' || challenges.title
+      WHEN 'challenge' THEN 'Reopened: ' || challenges.title
+    END
   FROM contributions
   JOIN challenges ON challenges.id = contributions.challenge_id
   WHERE contributions.id = NEW.contribution_id;

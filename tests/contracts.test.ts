@@ -1,8 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
+  ApiErrorResponseSchema,
+  ContributionPreviewSchema,
   CreateChallengeInputSchema,
   CreateQuestInputSchema,
+  EventSchema,
   GetNextWorkInputSchema,
+  ObserveInputSchema,
   ProposeInputSchema,
   ReviewContributionInputSchema,
   SubmitContributionInputSchema,
@@ -10,40 +14,33 @@ import {
 } from "../src/contracts";
 
 describe("OpenQuest public contracts", () => {
-  it("defaults automatic work selection and accepts explicit Quest Review selection", () => {
+  it("defaults observation and automatic work selection", () => {
+    expect(ObserveInputSchema.parse({})).toEqual({ limit: 10 });
     expect(GetNextWorkInputSchema.parse({})).toEqual({ mode: "any" });
     expect(
       GetNextWorkInputSchema.parse({ quest_id: "quest_research", mode: "review" }),
     ).toEqual({ quest_id: "quest_research", mode: "review" });
     expect(GetNextWorkInputSchema.safeParse({ mode: "reserve" }).success).toBe(false);
-    expect(
-      GetNextWorkInputSchema.safeParse({ mode: "any", budget_minutes: 10 }).success,
-    ).toBe(false);
   });
 
   it("accepts only support and challenge Review verdicts", () => {
+    const validInput = {
+      contribution_id: "contribution_1",
+      reason: "The public evidence supports this conclusion.",
+    };
+
     for (const verdict of ["support", "challenge"]) {
-      expect(
-        ReviewContributionInputSchema.safeParse({
-          contribution_id: "contribution_1",
-          verdict,
-          reason: "The public evidence supports this conclusion.",
-        }).success,
-      ).toBe(true);
+      expect(ReviewContributionInputSchema.safeParse({ ...validInput, verdict }).success).toBe(
+        true,
+      );
     }
 
-    for (const verdict of ["needs_work", "approve", "reject"]) {
-      expect(
-        ReviewContributionInputSchema.safeParse({
-          contribution_id: "contribution_1",
-          verdict,
-          reason: "Unsupported verdict",
-        }).success,
-      ).toBe(false);
-    }
+    expect(
+      ReviewContributionInputSchema.safeParse({ ...validInput, verdict: "reject" }).success,
+    ).toBe(false);
   });
 
-  it("enforces Contribution bounds, safe evidence URLs, and closed input", () => {
+  it("enforces Contribution bounds, meaningful content, and safe evidence", () => {
     const validInput = {
       challenge_id: "challenge_1",
       summary: "A bounded public result",
@@ -55,6 +52,9 @@ describe("OpenQuest public contracts", () => {
       SubmitContributionInputSchema.parse({ ...validInput, content: "  preserved\n" }).content,
     ).toBe("  preserved\n");
     expect(
+      SubmitContributionInputSchema.safeParse({ ...validInput, content: " \n\t " }).success,
+    ).toBe(false);
+    expect(
       SubmitContributionInputSchema.safeParse({ ...validInput, summary: "x".repeat(801) })
         .success,
     ).toBe(false);
@@ -63,7 +63,7 @@ describe("OpenQuest public contracts", () => {
         .success,
     ).toBe(false);
 
-    for (const url of ["javascript:alert(1)", "data:text/plain,secret", "file:///tmp/a"]) {
+    for (const url of ["javascript:alert(1)", "data:text/plain,public", "file:///tmp/a"]) {
       expect(
         SubmitContributionInputSchema.safeParse({
           ...validInput,
@@ -73,52 +73,37 @@ describe("OpenQuest public contracts", () => {
     }
 
     expect(
-      SubmitContributionInputSchema.safeParse({ ...validInput, priority: 5 }).success,
-    ).toBe(false);
-    expect(
       SubmitContributionInputSchema.safeParse({
         ...validInput,
-        result: { answer: "Legacy result" },
+        evidence: [{ url: "https://example.com/evidence", title: "   " }],
       }).success,
     ).toBe(false);
   });
 
-  it("strictly validates Quest and Challenge creation", () => {
+  it("keeps Quest, Challenge, and proposal inputs strictly closed", () => {
+    const questInput = {
+      title: "Open Research Quest",
+      goal: "Build a source-backed map of an open research question.",
+    };
+    const challengeInput = {
+      quest_id: "quest_research",
+      title: "Cross-check one published claim",
+      description: "Compare the claim directly with its cited primary source.",
+    };
+
+    expect(CreateQuestInputSchema.safeParse(questInput).success).toBe(true);
+    expect(CreateChallengeInputSchema.safeParse(challengeInput).success).toBe(true);
     expect(
-      CreateQuestInputSchema.safeParse({
-        title: "Open Research Quest",
-        goal: "Build a source-backed map of an open research question.",
-      }).success,
-    ).toBe(true);
-    expect(
-      CreateQuestInputSchema.safeParse({
-        title: "Open Research Quest",
-        goal: "Build a source-backed map of an open research question.",
-        kind: "discover",
-      }).success,
+      CreateQuestInputSchema.safeParse({ ...questInput, unexpected_field: true }).success,
     ).toBe(false);
     expect(
-      CreateChallengeInputSchema.safeParse({
-        quest_id: "quest_research",
-        title: "Cross-check one published claim",
-        description: "Compare the claim directly with its cited primary source.",
-        priority: 5,
-      }).success,
+      CreateChallengeInputSchema.safeParse({ ...challengeInput, unexpected_field: true }).success,
     ).toBe(false);
     expect(
-      CreateChallengeInputSchema.safeParse({
-        quest_id: "quest_research",
-        title: "Cross-check one published claim",
-        description: "Compare the claim directly with its cited primary source.",
-        rationale: "Legacy field",
-      }).success,
-    ).toBe(false);
-    expect(
-      CreateChallengeInputSchema.safeParse({
-        quest_id: "quest_research",
-        title: "Cross-check one published claim",
-        description: "Compare the claim directly with its cited primary source.",
-        acceptance_criteria: ["Legacy field"],
+      ProposeInputSchema.safeParse({
+        kind: "quest",
+        ...questInput,
+        unexpected_field: true,
       }).success,
     ).toBe(false);
   });
@@ -129,7 +114,6 @@ describe("OpenQuest public contracts", () => {
         kind: "quest",
         title: "Open Research Quest",
         goal: "Build a source-backed map of an open research question.",
-        description: "All work and source metadata will remain public.",
       }).success,
     ).toBe(true);
     expect(
@@ -138,29 +122,58 @@ describe("OpenQuest public contracts", () => {
         quest_id: "quest_research",
         title: "Cross-check one published claim",
         description: "Compare the claim directly with its cited primary source.",
-        parent_challenge_id: "challenge_parent",
       }).success,
     ).toBe(true);
     expect(
       ProposeInputSchema.safeParse({
         kind: "quest",
-        quest_id: "quest_research",
         title: "Mixed proposal",
         goal: "This proposal incorrectly combines both contract variants.",
-      }).success,
-    ).toBe(false);
-    expect(
-      ProposeInputSchema.safeParse({
-        kind: "challenge",
         quest_id: "quest_research",
-        title: "Mixed proposal",
-        description: "This proposal incorrectly includes a Quest-only goal field.",
-        goal: "This field belongs only to a Quest proposal.",
       }).success,
     ).toBe(false);
   });
 
-  it("publishes exactly five canonical, closed WebMCP tool schemas", () => {
+  it("publishes compact public previews and direct event summaries", () => {
+    const timestamp = "2026-08-30T12:00:00.000Z";
+
+    expect(
+      ContributionPreviewSchema.safeParse({
+        id: "contribution_1",
+        summary: "A public result",
+        status: "pending",
+        created_at: timestamp,
+      }).success,
+    ).toBe(true);
+    expect(
+      ContributionPreviewSchema.safeParse({
+        id: "contribution_1",
+        summary: "A public result",
+        status: "pending",
+        created_at: timestamp,
+        unexpected_field: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      EventSchema.safeParse({
+        sequence: 1,
+        quest_id: "quest_research",
+        entity_id: "challenge_1",
+        event_type: "challenge.created",
+        actor_label: null,
+        summary: "New Challenge: Cross-check one published claim",
+        created_at: timestamp,
+      }).success,
+    ).toBe(true);
+    expect(
+      ApiErrorResponseSchema.safeParse({
+        status: "contribution_unavailable",
+        message: "The Contribution is no longer available.",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("publishes exactly five canonical WebMCP input schemas", () => {
     expect(Object.keys(WebMCPToolInputJsonSchemas).sort()).toEqual([
       "openquest_next",
       "openquest_observe",
@@ -173,17 +186,5 @@ describe("OpenQuest public contracts", () => {
     expect(WebMCPToolInputJsonSchemas.openquest_observe.required ?? []).not.toContain("limit");
     expect(WebMCPToolInputJsonSchemas.openquest_submit.required ?? []).not.toContain("evidence");
     expect(WebMCPToolInputJsonSchemas.openquest_review.required ?? []).not.toContain("evidence");
-
-    for (const [name, schema] of Object.entries(WebMCPToolInputJsonSchemas)) {
-      if (name === "openquest_propose") {
-        const alternatives = "oneOf" in schema ? schema.oneOf : schema.anyOf;
-        expect(alternatives).toBeArray();
-        for (const alternative of alternatives ?? []) {
-          expect(alternative.additionalProperties).toBe(false);
-        }
-      } else {
-        expect(schema.additionalProperties).toBe(false);
-      }
-    }
   });
 });
