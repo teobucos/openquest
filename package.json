@@ -3,19 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
-  "packageManager": "pnpm@11.22.0",
+  "packageManager": "bun@1.4.0",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0 <23"
+    "bun": ">=1.4.0"
   },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
-    "serve": "corepack pnpm run build && corepack pnpm run migrate:serve && OPENSHARE_PERSIST_PATH=.runtime/state corepack pnpm run preview",
-    "deploy": "corepack pnpm run build && wrangler deploy",
-    "test": "vitest run --dir tests",
-    "test:watch": "vitest --dir tests",
+    "serve": "bun run build && bun run migrate:serve && OPENSHARE_PERSIST_PATH=.runtime/state bun run preview",
+    "deploy": "bun run build && wrangler deploy",
+    "test": "bun test tests/contracts.test.ts",
+    "test:watch": "bun test --watch tests/contracts.test.ts",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "migrate:local": "wrangler d1 migrations apply openshare --local",
@@ -31,13 +31,12 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
-    "@types/node": "^22.15.3",
+    "@types/bun": "^1.4.0",
     "@cloudflare/workers-types": "^4.20250829.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
-    "vitest": "^3.1.2",
     "wrangler": "^4.4.0"
   }
 }

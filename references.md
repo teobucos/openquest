@@ -1209,10 +1209,10 @@ great demo
 The minimum pull-request pipeline should be:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm run lint
-pnpm run test
-pnpm run build
+bun install --frozen-lockfile
+bun run lint
+bun run test
+bun run build
 ```
 
 Add a database-schema check and WebMCP eval command once stable.

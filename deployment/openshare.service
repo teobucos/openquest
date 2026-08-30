@@ -11,7 +11,9 @@ WorkingDirectory=/root/openshare
 Environment=NODE_ENV=production
 Environment=HOME=/home/agent
 Environment=XDG_CACHE_HOME=/home/agent/.cache
-ExecStart=/usr/bin/corepack pnpm run serve
+Environment=BUN_INSTALL=/home/agent/.bun
+Environment=PATH=/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/root/.bun/bin/bun run --bun serve
 Restart=on-failure
 RestartSec=3s
 TimeoutStartSec=120s

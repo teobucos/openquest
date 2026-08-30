@@ -571,25 +571,25 @@ Latest checked commit links for auditability:
 The official Vercel starter documents this exact scaffolding path. citeturn22search0
 
 ```bash
-npx create-next-app --example with-supabase openshare
+bunx create-next-app --example with-supabase openshare
 cd openshare
 
-npm install use-webmcp-tool zod
-npm run dev
+bun add use-webmcp-tool zod
+bun run dev
 ```
 
 Then create a Supabase project, fill the starter's environment variables, and apply your OpenShare migration.
 
 **Alternative — Cloudflare WebMCP starter**
 
-The starter itself uses `pnpm install`, `pnpm run start`, and `pnpm run deploy`. citeturn23view1
+The upstream starter uses a different package manager; adapt its commands to Bun. citeturn23view1
 
 ```bash
 git clone --depth 1 https://github.com/cloudflare/agents.git
 cd agents/examples/webmcp-react
 
-pnpm install
-pnpm run start
+bun install
+bun run start
 ```
 
 Use this path only if you decide that Cloudflare Workers/D1 is worth more to the demo than Supabase's ready-made realtime/auth stack.
@@ -599,10 +599,10 @@ Use this path only if you decide that Cloudflare Workers/D1 is worth more to the
 Current Convex documentation still exposes the App Router template through its scaffolder. citeturn14search12
 
 ```bash
-npx create-convex@latest \
+bunx create-convex@latest \
   -t get-convex/convex-nextjs-app-router-demo
 
-npm run dev
+bun run dev
 ```
 
 I would choose this only if you are already materially faster with Convex than Supabase.
@@ -629,7 +629,7 @@ Thinkroom requires Ruby 3.4, Node 20+ and SQLite. citeturn23view2
 | **Read closely** | `GoogleChromeLabs/webmcp-tools` — `https://github.com/GoogleChromeLabs/webmcp-tools` | Apache-2.0; demos, extension, evals, polyfill | **528 stars**, 98 forks; latest checked commit **2026-08-28**. citeturn12search1 | Low | Canonical demo collection and debugging/eval utilities. |
 | **Read closely** | Cloudflare `webmcp-react` — `https://github.com/cloudflare/agents/tree/main/examples/webmcp-react` | MIT; React/Vite/TS/Workers | Parent **5.5k stars**, active Aug. 2026. citeturn12search2 | Low | Strongest example of shared UI/WebMCP action logic and schema validation. |
 | **Architecture reference** | Thinkroom — `https://github.com/kieranklaassen/thinkroom` | MIT; Rails + React, Yjs/Action Cable | ~24 stars; 409 commits; very active Aug. 2026. citeturn23view2turn24search4 | High | Provenance, presence, human/agent coexistence and untrusted agent content. |
-| **Community tooling** | `WebMCP-org/npm-packages` — `https://github.com/WebMCP-org/npm-packages` | MIT; TypeScript/pnpm monorepo | **80 stars**, 597 commits; latest checked commit **2026-08-28**. citeturn13search0 | Medium | Polyfill, TS types, React hooks, MCP bridge and local relay. Useful later for clients beyond ChatGPT. |
+| **Community tooling** | `WebMCP-org/npm-packages` — `https://github.com/WebMCP-org/npm-packages` | MIT; TypeScript monorepo | **80 stars**, 597 commits; latest checked commit **2026-08-28**. citeturn13search0 | Medium | Polyfill, TS types, React hooks, MCP bridge and local relay. Useful later for clients beyond ChatGPT. |
 | **Testing reference** | `WebMCP-org/chrome-devtools-quickstart` — `https://github.com/WebMCP-org/chrome-devtools-quickstart` | MIT; Vite/JavaScript | **39 stars**, 29 commits; latest checked commit **2026-05-29**. citeturn13search1 | Low | Useful local browser-agent test loop; some examples still show legacy `navigator.modelContext`, so do not use it as API truth. |
 | **Next.js integration reference** | `vercel/shop` — `https://github.com/vercel/shop` | MIT; Next.js/Turborepo/TypeScript | **57 stars**; latest checked commit **2026-08-28**. citeturn14search0 | Medium | Useful evidence of adding WebMCP to an existing polished Next.js application; domain itself is irrelevant. |
 | **Experience reference** | Agents Play Pokémon — `https://agentsplaypokemon.com/` | Public repo not located | N/A | N/A | Copy the *shared-world idea*: many independent visiting agents, tiny action vocabulary, visible cumulative state. Do not wait on source access. |
@@ -658,7 +658,7 @@ https://github.com/vercel/shop/commit/fb68c4f926af672e00c7b9d65dc78a3a6627ca28
 `use-webmcp-tool` is the cleanest dependency for OpenShare.
 
 ```bash
-npm install use-webmcp-tool
+bun add use-webmcp-tool
 ```
 
 Its core pattern is:

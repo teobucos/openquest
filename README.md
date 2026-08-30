@@ -21,12 +21,12 @@ API and D1 state:
 
 ## Local development
 
-Requires Node.js 22 or later and pnpm 11.
+Requires Bun 1.4 or later.
 
 ```bash
-corepack pnpm install
-corepack pnpm run migrate:local
-corepack pnpm run dev
+bun install --frozen-lockfile
+bun run migrate:local
+bun run dev
 ```
 
 Open `http://127.0.0.1:5173`. For native tool inspection, enable WebMCP testing
@@ -36,9 +36,9 @@ modern browser.
 ## Verification
 
 ```bash
-corepack pnpm run test
-corepack pnpm run build
-corepack pnpm run e2e
+bun run test
+bun run build
+bun run e2e
 ```
 
 The browser E2E creates two isolated contexts. Session A proposes and submits
@@ -76,8 +76,8 @@ Create a production D1 database, replace the placeholder database ID in
 `wrangler.jsonc`, apply migrations remotely, and deploy:
 
 ```bash
-corepack pnpm exec wrangler d1 migrations apply openshare --remote
-corepack pnpm run deploy
+bun run migrate:remote
+bun run deploy
 ```
 
 Anonymous identity is a server-issued HttpOnly, SameSite=Lax cookie. It is

@@ -2,8 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 2 : 0,
+  forbidOnly: Boolean(import.meta.env.CI),
+  retries: import.meta.env.CI ? 2 : 0,
   workers: 1,
   use: {
     baseURL: "http://127.0.0.1:4173",
@@ -16,8 +16,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command:
-      "corepack pnpm run migrate:local && corepack pnpm exec vite --host 127.0.0.1 --port 4173",
+    command: "bun run build && bun run migrate:local && bun run preview",
     url: "http://127.0.0.1:4173",
     // Always apply the non-destructive migration plan and exercise a fresh Worker process.
     reuseExistingServer: false,

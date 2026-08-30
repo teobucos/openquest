@@ -3,7 +3,6 @@
   "name": "openshare",
   "main": "src/server.ts",
   "compatibility_date": "2025-03-10",
-  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
