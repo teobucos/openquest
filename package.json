@@ -11,14 +11,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "deploy": "pnpm run build && wrangler deploy",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "serve": "corepack pnpm run build && corepack pnpm run migrate:local && corepack pnpm run preview",
+    "deploy": "corepack pnpm run build && wrangler deploy",
     "test": "vitest run --dir tests",
     "test:watch": "vitest --dir tests",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "migrate:local": "wrangler d1 migrations apply openshare --local",
-    "migrate:remote": "wrangler d1 migrations apply openshare --remote",
-    "types": "wrangler types --env-interface Env"
+    "migrate:remote": "wrangler d1 migrations apply openshare --remote"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.8.1",

@@ -48,6 +48,30 @@ Needs review to Resolved through polling.
 
 ## Deployment
 
+### Tailscale preview
+
+The local production preview runs the built Worker and local D1 state on
+loopback only. Install and start the hardened service with:
+
+```bash
+sudo install -m 0644 deployment/openshare.service /etc/systemd/system/openshare.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now openshare.service
+```
+
+Expose that loopback listener with Tailscale Serve rather than binding the app
+to the network directly. On this host, `8449` is the next unused HTTPS Serve
+port:
+
+```bash
+sudo tailscale serve --bg --https=8449 http://127.0.0.1:4173
+```
+
+Tailnet members can then open `https://zeus.tail273bdb.ts.net:8449`. Do not use
+Tailscale Funnel for this anonymous-write app.
+
+### Cloudflare
+
 Create a production D1 database, replace the placeholder database ID in
 `wrangler.jsonc`, apply migrations remotely, and deploy:
 

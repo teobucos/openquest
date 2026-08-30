@@ -1,7 +1,11 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-
-type WorkMode = "any" | "contribute" | "review";
-type ReviewVerdict = "support" | "challenge" | "needs_work";
+import type {
+  GetNextWorkInput,
+  ObserveMissionsInput,
+  ProposeNeedInput,
+  ReviewContributionInput,
+  SubmitContributionInput,
+} from "../src/contracts";
 
 interface Mission {
   readonly id: string;
@@ -33,29 +37,22 @@ interface ToolResult {
   readonly need_id?: string;
 }
 
-interface ToolInvocation {
-  readonly name:
-    | "observe_missions"
-    | "get_next_work"
-    | "submit_contribution"
-    | "review_contribution"
-    | "propose_need";
-  readonly input: {
-    readonly mission_id?: string;
-    readonly mode?: WorkMode;
-    readonly need_id?: string;
-    readonly summary?: string;
-    readonly result?: {
-      readonly answer: string;
-    };
-    readonly contribution_id?: string;
-    readonly verdict?: ReviewVerdict;
-    readonly reason?: string;
-    readonly title?: string;
-    readonly instructions?: string;
-    readonly rationale?: string;
-  };
+type OptionalFields<Type, Fields extends keyof Type> = Omit<Type, Fields> & Partial<Pick<Type, Fields>>;
+
+interface ToolInputs {
+  readonly observe_missions: OptionalFields<ObserveMissionsInput, "limit">;
+  readonly get_next_work: OptionalFields<GetNextWorkInput, "mode">;
+  readonly submit_contribution: OptionalFields<SubmitContributionInput, "evidence">;
+  readonly review_contribution: OptionalFields<ReviewContributionInput, "evidence">;
+  readonly propose_need: ProposeNeedInput;
 }
+
+type ToolInvocation = {
+  [Name in keyof ToolInputs]: {
+    readonly name: Name;
+    readonly input: ToolInputs[Name];
+  };
+}[keyof ToolInputs];
 
 declare global {
   interface Window {
@@ -145,11 +142,15 @@ test("two WebMCP sessions contribute, cross-review, resolve, and refresh the mis
 }, testInfo) => {
   const callerChosenToken = crypto.randomUUID();
   const sessionResponse = await request.get("/api/world", {
-    headers: { cookie: `os_session=${callerChosenToken}` },
+    headers: {
+      cookie: `os_session=${callerChosenToken}`,
+      "x-forwarded-proto": "https",
+    },
   });
   const issuedCookie = sessionResponse.headers()["set-cookie"] ?? "";
   expect(issuedCookie).toContain("os_session=");
   expect(issuedCookie).not.toContain(callerChosenToken);
+  expect(issuedCookie).toContain("Secure");
 
   const sessionA = await browser.newContext({
     extraHTTPHeaders: { "cf-connecting-ip": `e2e-session-a-${crypto.randomUUID()}` },

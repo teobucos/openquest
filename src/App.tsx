@@ -65,7 +65,7 @@ function ToolStatus(props: { state: WebMCPToolsState }) {
         ? "Registering Site Tools"
         : "Human mode · WebMCP ready browser required";
   return (
-    <div className={"tool-status " + (props.state.registered ? "is-ready" : "")}>
+    <div className={"tool-status " + (props.state.registered ? "is-ready" : "")} role="status">
       <span className="status-dot" />{label}
     </div>
   );
@@ -89,7 +89,7 @@ function Loading() {
 }
 
 function ErrorPanel(props: { message: string; retry: () => void }) {
-  return <div className="error-panel"><p>{props.message}</p><button type="button" onClick={props.retry}>Try again</button></div>;
+  return <div className="error-panel" role="alert"><p>{props.message}</p><button type="button" onClick={props.retry}>Try again</button></div>;
 }
 
 function Metric(props: { label: string; value: number; tone: string }) {
@@ -167,7 +167,7 @@ function ContributionComposer({ need, completed }: { need: NeedWithContribution;
       <label>Summary<input name="summary" required maxLength={800} /></label>
       <label>Result<textarea name="answer" required maxLength={6000} rows={4} /></label>
       <label>Evidence URL<input name="evidence" type="url" /></label>
-      {error && <p className="form-error">{error}</p>}
+      {error && <p className="form-error" role="alert">{error}</p>}
       <div className="form-actions"><button type="submit">Submit contribution</button><button className="quiet-button" type="button" onClick={() => setExpanded(false)}>Cancel</button></div>
     </form>
   );
@@ -197,7 +197,7 @@ function ReviewComposer({ need, completed }: { need: NeedWithContribution; compl
     <form className="review-form" onSubmit={submit}>
       <select name="verdict" aria-label="Review verdict"><option value="support">Support</option><option value="needs_work">Needs work</option><option value="challenge">Challenge</option></select>
       <input name="reason" required maxLength={1000} placeholder="Why does the evidence support your verdict?" />
-      <button type="submit">Record review</button>{error && <p className="form-error">{error}</p>}
+      <button type="submit">Record review</button>{error && <p className="form-error" role="alert">{error}</p>}
     </form>
   );
 }
@@ -242,7 +242,7 @@ function ProposeForm({ mission, completed }: { mission: Mission; completed: () =
   return (
     <div className="propose-panel"><button type="button" className="text-button" onClick={() => setExpanded(!expanded)}>{expanded ? "Close proposal" : "+ Propose a new Need"}</button>
       {expanded && <form className="action-form" onSubmit={submit}><label>Title<input name="title" required minLength={3} maxLength={160} /></label><label>Instructions<textarea name="instructions" required minLength={10} maxLength={1200} /></label><label>Why it matters<textarea name="rationale" required minLength={10} maxLength={800} /></label><button type="submit">Expand the frontier</button></form>}
-      {message && <p className="form-note">{message}</p>}
+      {message && <p className="form-note" role="status">{message}</p>}
     </div>
   );
 }
