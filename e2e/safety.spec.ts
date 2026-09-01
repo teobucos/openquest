@@ -18,13 +18,13 @@ import {
 test("home explains unsupported WebMCP and an empty active Quest list", async ({ page }) => {
   await page.route("**/api/world*", (route) => route.fulfill({
     body: JSON.stringify({
-      active_agents: 0,
       activity: [],
-      freshness: { last_sequence: 0, server_time: "2026-08-30T12:00:00.000Z" },
+      contributor_count: 0,
+      freshness: { event_count: 0, last_sequence: 0, server_time: "2026-08-30T12:00:00.000Z" },
       quests: [],
-      recent_agents: [],
+      recent_contributors: [],
       totals: { awaiting_review: 0, open: 0, resolved: 0 },
-      work_queues: { open: [], review: [] },
+      work_stream: [],
     }),
     contentType: "application/json",
     status: 200,
@@ -33,12 +33,12 @@ test("home explains unsupported WebMCP and an empty active Quest list", async ({
   await page.goto("/");
   await expect(page.getByText("WebMCP · browser unsupported", { exact: true })).toBeVisible();
   const emptyQuestCopy = page.getByText(
-    "No active Quests. Open the creation panel to establish public direction.",
+    "No active Quests.",
     { exact: true },
   );
   await expect(emptyQuestCopy).toBeVisible();
   expect(await emptyQuestCopy.innerText()).toBe(
-    "No active Quests. Open the creation panel to establish public direction.",
+    "No active Quests.",
   );
 });
 
@@ -114,7 +114,7 @@ test("OpenQuest keeps public reads inert and returns invalid tool input as struc
     );
     await page.goto("/q/accessible-hcmc");
     await expect(challengeRow(page, title)).toBeVisible();
-    await expect(page.locator("article.challenge-row script")).toHaveCount(0);
+    await expect(page.locator(".work-row script")).toHaveCount(0);
     await expect(page.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
 
     for (const url of ["javascript:alert(1)", "data:text/plain,unsafe", "file:///tmp/unsafe"]) {
@@ -335,16 +335,16 @@ test("Quest previews stay bounded and omit full Contribution work", async ({ bro
     const detailResponse = await ownerPage.request.get(`/api/quests/${createdQuest.slug}`);
     expect(detailResponse.status()).toBe(200);
     const detail = QuestResponseSchema.parse(await detailResponse.json());
-    expect(detail.challenges).toHaveLength(100);
+    expect(detail.challenges).toHaveLength(30);
     expect(detail.counts.open + detail.counts.awaiting_review + detail.counts.resolved).toBe(101);
 
     const observeResponse = await ownerPage.request.get(`/api/world?quest_id=${createdQuest.quest_id}`);
     expect(observeResponse.status()).toBe(200);
     const observed = ObserveResponseSchema.parse(await observeResponse.json());
-    expect(observed.challenges).toHaveLength(100);
-    expect(observed.work_queues.review).toHaveLength(10);
-    expect(observed.work_queues.open).toHaveLength(1);
-    expect(observed.recent_agents).toHaveLength(10);
+    expect(observed.challenges).toHaveLength(30);
+    expect(observed.work_stream.filter((item) => item.stream_state === "review")).toHaveLength(10);
+    expect(observed.work_stream.filter((item) => item.stream_state === "open")).toHaveLength(1);
+    expect(observed.recent_contributors).toHaveLength(10);
     expect(observed.freshness.last_sequence).toBe(observed.activity[0]?.sequence);
     expect(new Date(observed.freshness.server_time).getTime()).not.toBeNaN();
     for (const event of observed.activity) {

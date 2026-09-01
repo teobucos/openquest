@@ -75,7 +75,7 @@ test("a WebMCP mutation waits for a queued fresh render", async ({ browser }) =>
 
     releaseHeldResponse?.();
 
-    await expect(page.getByRole("heading", { exact: true, name: title })).toBeVisible();
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
     await expect.poll(() => worldRequests - baselineRequests).toBeGreaterThanOrEqual(2);
     await expect.poll(() => page.evaluate(() => (
       window as typeof window & {

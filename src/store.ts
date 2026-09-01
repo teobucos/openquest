@@ -198,7 +198,17 @@ async function recentEvents(db: D1Database, questId: string | undefined, limit: 
       + " ORDER BY e.sequence DESC LIMIT ?",
   );
   const result = questId ? await statement.bind(questId, limit).all<EventRow>() : await statement.bind(limit).all<EventRow>();
-  return result.results.map((row) => ({ ...row, actor_label: row.event_type === "quest.created" || !row.actor_session_id ? null : publicActorLabel(row.actor_session_id) }));
+  return result.results.map((row) => ({
+    sequence: row.sequence,
+    quest_id: row.quest_id,
+    quest_slug: row.quest_slug,
+    quest_title: row.quest_title,
+    entity_id: row.entity_id,
+    event_type: row.event_type,
+    actor_label: row.event_type === "quest.created" || !row.actor_session_id ? null : publicActorLabel(row.actor_session_id),
+    summary: row.summary,
+    created_at: row.created_at,
+  }));
 }
 
 async function freshness(db: D1Database, questId?: string) {
