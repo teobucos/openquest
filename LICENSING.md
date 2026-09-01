@@ -15,10 +15,11 @@ Apache-2.0.
 
 Canonical factual records and metadata published by the official OpenQuest
 network are intended for CC0-1.0 dedication where OpenQuest or the submitting
-party has the necessary rights. This may include Quest and Challenge
-identifiers and metadata, source or citation metadata, verification state,
-timestamps, relationship or graph metadata, and structured factual datasets
-produced by OpenQuest. See [LICENSES/CC0-1.0.txt](./LICENSES/CC0-1.0.txt).
+party has the necessary rights. This may include Quest, Challenge, and
+organization identifiers and metadata, organization verification state, source
+or citation metadata, timestamps, relationship or graph metadata, and
+structured factual datasets produced by OpenQuest. See
+[LICENSES/CC0-1.0.txt](./LICENSES/CC0-1.0.txt).
 
 ## Authored expression
 

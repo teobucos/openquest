@@ -29,8 +29,13 @@ Before opening a pull request, run:
 ```bash
 bun install --frozen-lockfile
 rm -rf .wrangler/state .runtime/state
-bun run migrate:local
+bun run demo:setup:local
 bun run test
 bun run build
 bun run e2e
 ```
+
+Do not run a remote demo seed as part of normal development or deployment.
+Remote migrations, seeding, verification, deployment, repository visibility,
+and release tags are owner/release actions. The demo commands do not provide a
+remote reset path.

@@ -1,0 +1,14 @@
+{
+  "fixture_version": 1,
+  "id_prefix": "demo_",
+  "organizations": 4,
+  "quests": 8,
+  "contributors": 12,
+  "public_events": 100,
+  "work_stream": {
+    "review": 10,
+    "open": 15,
+    "resolved": 17
+  },
+  "reopened_history": 3
+}

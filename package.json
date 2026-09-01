@@ -23,7 +23,18 @@
     "doctor:design": "react-doctor design --yes --no-telemetry --verbose",
     "migrate:local": "bun run --bun wrangler d1 migrations apply openquest --local",
     "migrate:serve": "bun run --bun wrangler d1 migrations apply openquest --local --persist-to .runtime/state",
-    "migrate:remote": "bun run --bun wrangler d1 migrations apply openquest --remote"
+    "migrate:remote": "bun run --bun wrangler d1 migrations apply openquest --remote",
+    "demo:migrate:local": "bun run migrate:local",
+    "demo:seed:local": "bun run --bun wrangler d1 execute openquest --local --file demo/seed.sql",
+    "demo:verify:local": "bun run --bun wrangler d1 execute openquest --local --file demo/verify.sql",
+    "demo:setup:local": "bun run demo:migrate:local && bun run demo:seed:local && bun run demo:verify:local",
+    "demo:migrate:serve": "bun run migrate:serve",
+    "demo:seed:serve": "bun run --bun wrangler d1 execute openquest --local --persist-to .runtime/state --file demo/seed.sql",
+    "demo:verify:serve": "bun run --bun wrangler d1 execute openquest --local --persist-to .runtime/state --file demo/verify.sql",
+    "demo:setup:serve": "bun run demo:migrate:serve && bun run demo:seed:serve && bun run demo:verify:serve",
+    "demo:migrate:remote": "bun run migrate:remote",
+    "demo:seed:remote": "bun run --bun wrangler d1 execute openquest --remote --file demo/seed.sql",
+    "demo:verify:remote": "bun run --bun wrangler d1 execute openquest --remote --file demo/verify.sql"
   },
   "dependencies": {
     "react": "^19.0.0",
