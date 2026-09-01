@@ -412,6 +412,13 @@ export async function getChallenge(db: D1Database, id: string) {
   };
 }
 
+export async function latestEventSequence(db: D1Database, questId: string): Promise<number> {
+  const row = await db.prepare(
+    "SELECT COALESCE(MAX(sequence), 0) AS sequence FROM events WHERE quest_id = ?",
+  ).bind(questId).first<{ sequence: number }>();
+  return row?.sequence ?? 0;
+}
+
 function questSlug(title: string, id: string): string {
   const base = title.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70).replace(/-+$/g, "") || "quest";
   return `${base}-${id.replaceAll("-", "").slice(0, 8)}`;

@@ -21,14 +21,20 @@ import {
   getChallenge,
   getContribution,
   getQuest,
+  latestEventSequence,
   nextWork,
   observeState,
   observeStateForSlug,
+  resolveQuestIdForChallenge,
+  resolveQuestIdForContribution,
   reviewContribution,
   submitContribution,
 } from "./store";
+import { broadcastLiveInvalidation, upgradeLiveSocket, type LiveHubEnvironment } from "./liveHub";
 
-export interface Env {
+export { LiveHub } from "./liveHub";
+
+export interface Env extends LiveHubEnvironment {
   DB: D1Database;
 }
 
@@ -95,8 +101,31 @@ async function writeIdentity(request: Request, env: Env) {
   return identity;
 }
 
-async function handleApi(request: Request, env: Env): Promise<Response> {
+function notifyMutation(
+  context: ExecutionContext,
+  env: Env,
+  questId: string | null | Promise<string | null>,
+): void {
+  context.waitUntil((async () => {
+    try {
+      const resolvedQuestId = await questId;
+      if (!resolvedQuestId) {
+        console.error("OpenQuest live transport could not resolve the affected Quest.");
+        return;
+      }
+      const sequence = await latestEventSequence(env.DB, resolvedQuestId);
+      await broadcastLiveInvalidation(env, resolvedQuestId, sequence);
+    } catch (cause) {
+      console.error("OpenQuest live transport publish failed", cause);
+    }
+  })());
+}
+
+async function handleApi(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
+  if (url.pathname === "/api/live") {
+    return upgradeLiveSocket(request, env);
+  }
   if (request.method === "GET" && url.pathname === "/api/world") {
     const limit = worldLimitSchema.parse(url.searchParams.get("limit") ?? undefined);
     const questId = identifierQuerySchema.parse(url.searchParams.get("quest_id") ?? undefined);
@@ -130,33 +159,45 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && url.pathname === "/api/quests") {
     const input = await parseBody(request, CreateQuestInputSchema);
     const identity = await writeIdentity(request, env);
-    return json(await createQuest(env.DB, identity.actor, input), 201, identity.setCookie);
+    const result = await createQuest(env.DB, identity.actor, input);
+    notifyMutation(context, env, result.quest_id);
+    return json(result, 201, identity.setCookie);
   }
 
   if (request.method === "POST" && url.pathname === "/api/challenges") {
     const input = await parseBody(request, CreateChallengeInputSchema);
     const identity = await writeIdentity(request, env);
-    return json(await createChallenge(env.DB, identity.actor, input), 201, identity.setCookie);
+    const result = await createChallenge(env.DB, identity.actor, input);
+    notifyMutation(context, env, result.quest_id);
+    return json(result, 201, identity.setCookie);
   }
 
   if (request.method === "POST" && url.pathname === "/api/contributions") {
     const input = await parseBody(request, SubmitContributionInputSchema);
     const identity = await writeIdentity(request, env);
-    return json(await submitContribution(env.DB, identity.actor, input), 201, identity.setCookie);
+    const result = await submitContribution(env.DB, identity.actor, input);
+    notifyMutation(context, env, resolveQuestIdForChallenge(env.DB, input.challenge_id));
+    return json(result, 201, identity.setCookie);
   }
 
   if (request.method === "POST" && url.pathname === "/api/reviews") {
     const input = await parseBody(request, ReviewContributionInputSchema);
     const identity = await writeIdentity(request, env);
-    return json(await reviewContribution(env.DB, identity.actor, input), 201, identity.setCookie);
+    const result = await reviewContribution(env.DB, identity.actor, input);
+    notifyMutation(context, env, resolveQuestIdForContribution(env.DB, input.contribution_id));
+    return json(result, 201, identity.setCookie);
   }
 
   fail(404, "not_found", "API route not found.");
 }
 
-export async function handleRequest(request: Request, env: Env): Promise<Response> {
+export async function handleRequest(
+  request: Request,
+  env: Env,
+  context: ExecutionContext,
+): Promise<Response> {
   try {
-    return await handleApi(request, env);
+    return await handleApi(request, env, context);
   } catch (cause) {
     if (cause instanceof HttpError || cause instanceof StoreError) {
       return json(cause.payload, cause.httpStatus);
@@ -170,7 +211,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 }
 
 export default {
-  fetch(request, env) {
-    return handleRequest(request, env);
+  fetch(request, env, context) {
+    return handleRequest(request, env, context);
   },
 } satisfies ExportedHandler<Env>;
