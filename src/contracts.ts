@@ -20,6 +20,10 @@ const ContributionContentSchema = z.string().min(1).max(12_000).refine((value) =
   message: "Contribution content cannot be empty.",
 });
 const ReviewReasonSchema = z.string().trim().min(1).max(1_000);
+const CanonicalRorIdSchema = z.string().regex(
+  /^https:\/\/ror\.org\/0[a-z0-9]{8}$/,
+  "ROR ID must use the canonical https://ror.org/0xxxxxxxx form",
+);
 
 export const EvidenceSchema = z.strictObject({
   url: z.httpUrl().max(2_048),
@@ -44,7 +48,7 @@ export const OrganizationSummarySchema = z.strictObject({
   category: OrganizationCategorySchema,
   verification_status: OrganizationVerificationStatusSchema,
   is_demo: z.boolean(),
-  ror_id: z.string().trim().min(1).max(128).nullable(),
+  ror_id: CanonicalRorIdSchema.nullable(),
 }).strict();
 
 export const QuestSchema = z.strictObject({
@@ -167,6 +171,14 @@ export const WebMCPToolInputJsonSchemas = {
 } as const;
 
 export type Quest = z.output<typeof QuestSchema>;
+export type OrganizationSummary = z.output<typeof OrganizationSummarySchema>;
+
+export function isOfficialOrganization(
+  organization: Pick<OrganizationSummary, "is_demo" | "verification_status">,
+): boolean {
+  return organization.verification_status === "verified" && !organization.is_demo;
+}
+
 export type QuestWithOrganization = z.output<typeof QuestWithOrganizationSchema>;
 export type Challenge = z.output<typeof ChallengeSchema>;
 export type Contribution = z.output<typeof ContributionSchema>;

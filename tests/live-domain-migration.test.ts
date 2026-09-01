@@ -34,3 +34,29 @@ test("the additive live-domain migration preserves deterministic fixture chronol
     db.close();
   }
 });
+
+test("the additive ROR constraint accepts null and canonical URLs without an official column", () => {
+  const db = new Database(":memory:");
+  try {
+    applyMigrations(db);
+    const insert = db.prepare(
+      "INSERT INTO organizations (id, slug, name, category, verification_status, is_demo, ror_id) VALUES (?, ?, ?, 'research', 'verified', 0, ?)",
+    );
+    insert.run("organization_null_ror", "null-ror", "Null ROR Organization", null);
+    insert.run("organization_valid_ror", "valid-ror", "Valid ROR Organization", "https://ror.org/03yrm5c26");
+    expect(() => insert.run(
+      "organization_invalid_ror",
+      "invalid-ror",
+      "Invalid ROR Organization",
+      "ror.org/03yrm5c26",
+    )).toThrow("invalid_ror_id");
+    expect(() => db.exec(
+      "UPDATE organizations SET ror_id = 'https://ror.org/not-a-ror' WHERE id = 'organization_valid_ror'",
+    )).toThrow("invalid_ror_id");
+
+    const columns = db.query("PRAGMA table_info(organizations)").all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).not.toContain("official");
+  } finally {
+    db.close();
+  }
+});

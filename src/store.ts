@@ -230,13 +230,18 @@ async function contributorCount(db: D1Database, questId?: string) {
 }
 
 async function recentContributors(db: D1Database, questId?: string) {
+  // The global monitoring projection is the hot path. The scoped projection is
+  // bounded by one Quest and uses its existing Quest-event index instead.
+  const eventsSource = questId
+    ? "events e"
+    : "events e INDEXED BY events_by_contributor_recency";
   const statement = db.prepare(
     "WITH contributor_events AS ("
       + "SELECT e.actor_session_id, e.quest_id, q.slug AS quest_slug, q.title AS quest_title, " + organizationSelect + ", "
       + "e.event_type, e.entity_id, e.summary, e.created_at, e.sequence, "
       + "COUNT(*) OVER (PARTITION BY e.actor_session_id) AS activity_count, "
       + "ROW_NUMBER() OVER (PARTITION BY e.actor_session_id ORDER BY e.sequence DESC) AS recency "
-      + "FROM events e JOIN quests q ON q.id = e.quest_id" + organizationJoin + " "
+      + "FROM " + eventsSource + " JOIN quests q ON q.id = e.quest_id" + organizationJoin + " "
       + "WHERE e.event_type IN ('challenge.created', 'contribution.created', 'review.supported', 'review.challenged') AND e.actor_session_id IS NOT NULL"
       + (questId ? " AND e.quest_id = ?" : "")
       + ") SELECT actor_session_id, quest_id, quest_slug, quest_title, organization_id, organization_slug, organization_name, organization_category, organization_verification_status, organization_is_demo, organization_ror_id, event_type, entity_id, summary, created_at, activity_count "

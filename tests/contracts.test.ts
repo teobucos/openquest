@@ -3,6 +3,7 @@ import {
   ChallengeDetailResponseSchema,
   CreateQuestInputSchema,
   FreshnessSchema,
+  isOfficialOrganization,
   ObserveInputSchema,
   ObserveResponseSchema,
   OrganizationCategorySchema,
@@ -31,11 +32,25 @@ describe("OpenQuest live-domain contracts", () => {
   it("projects only bounded, strict public organization metadata", () => {
     expect(OrganizationSummarySchema.parse(organization).ror_id).toBeNull();
     expect(OrganizationSummarySchema.safeParse({ ...organization, ror_id: "https://ror.org/03yrm5c26" }).success).toBe(true);
+    expect(OrganizationSummarySchema.safeParse({ ...organization, ror_id: "ror.org/03yrm5c26" }).success).toBe(false);
+    expect(OrganizationSummarySchema.safeParse({ ...organization, ror_id: "https://ror.org/03yrm5c2" }).success).toBe(false);
     expect(OrganizationSummarySchema.safeParse({ ...organization, category: "university" }).success).toBe(false);
     expect(OrganizationSummarySchema.safeParse({ ...organization, verification_status: "pending" }).success).toBe(false);
     expect(OrganizationSummarySchema.safeParse({ ...organization, verification_notes: "private" }).success).toBe(false);
+    expect(OrganizationSummarySchema.safeParse({ ...organization, official: true }).success).toBe(false);
     expect(OrganizationCategorySchema.options).toEqual(["research", "education", "healthcare", "company", "nonprofit", "government", "funder", "other"]);
     expect(OrganizationVerificationStatusSchema.options).toEqual(["unverified", "verified"]);
+  });
+
+  it("derives official provenance without accepting or storing an official field", () => {
+    expect(isOfficialOrganization({ is_demo: false, verification_status: "verified" })).toBe(true);
+    expect(isOfficialOrganization({ is_demo: true, verification_status: "verified" })).toBe(false);
+    expect(isOfficialOrganization({ is_demo: false, verification_status: "unverified" })).toBe(false);
+    expect(CreateQuestInputSchema.safeParse({
+      goal: "Keep organization provenance derived from reviewed metadata rather than public writes.",
+      official: true,
+      title: "No official input",
+    }).success).toBe(false);
   });
 
   it("uses one compact work stream with pending, open, and accepted presentation", () => {

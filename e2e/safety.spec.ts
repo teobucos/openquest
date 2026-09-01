@@ -89,6 +89,41 @@ test("OpenQuest keeps public reads inert and returns invalid tool input as struc
   expect(issuedCookie).toContain("HttpOnly");
   expect(issuedCookie).toContain("SameSite=Lax");
   expect(issuedCookie).toContain("Secure");
+  const secureQuest = CreateQuestResponseSchema.parse(await secureWrite.json());
+
+  const readableChallengeResponse = await request.post("/api/challenges", {
+    data: {
+      description: "Create public read coverage for a Challenge detail endpoint without issuing a read cookie.",
+      quest_id: secureQuest.quest_id,
+      title: "Public read-only Challenge",
+    },
+  });
+  expect(readableChallengeResponse.status()).toBe(201);
+  const readableChallenge = CreateChallengeResponseSchema.parse(await readableChallengeResponse.json());
+  const readableContributionResponse = await request.post("/api/contributions", {
+    data: {
+      challenge_id: readableChallenge.challenge_id,
+      content: "Create one public Contribution so its detail read can prove it never initializes a session.",
+      summary: "Public detail read fixture.",
+    },
+  });
+  expect(readableContributionResponse.status()).toBe(201);
+  const readableContribution = SubmitContributionResponseSchema.parse(
+    await readableContributionResponse.json(),
+  );
+
+  const directPublicReads = await Promise.all([
+    request.get(`/api/challenges/${readableChallenge.challenge_id}`),
+    request.get(`/api/quests/${secureQuest.slug}`),
+    request.get(`/api/contributions/${readableContribution.contribution_id}`),
+    request.get("/api/live"),
+    request.get("/api/live?quest_id=not%20a%20canonical%20id"),
+    request.post("/api/live"),
+  ]);
+  expect(directPublicReads.map((response) => response.status())).toEqual([200, 200, 200, 426, 426, 405]);
+  for (const response of directPublicReads) {
+    expect(response.headers()["set-cookie"]).toBeUndefined();
+  }
 
   const session = await browser.newContext({
     extraHTTPHeaders: { "cf-connecting-ip": `e2e-safety-${crypto.randomUUID()}` },
