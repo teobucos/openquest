@@ -242,6 +242,24 @@ function questContext(id: string, slug: string, title: string) {
   return { id, slug, title };
 }
 
+const OPEN_QUEUE_SELECT =
+  "SELECT q.id AS quest_id, q.slug AS quest_slug, q.title AS quest_title, "
+    + "h.id AS challenge_id, h.title AS challenge_title, h.description AS challenge_description, "
+    + "h.created_at AS challenge_created_at "
+    + "FROM challenges h JOIN quests q ON q.id = h.quest_id ";
+const OPEN_QUEUE_ORDER = " ORDER BY h.created_at, h.id LIMIT 10";
+
+export const GLOBAL_OPEN_QUEUE_SQL = OPEN_QUEUE_SELECT
+  + "WHERE h.status = 'open' AND q.status = 'active'"
+  + OPEN_QUEUE_ORDER;
+
+function scopedOpenQueueSql() {
+  return OPEN_QUEUE_SELECT
+    + "WHERE h.status = 'open' AND q.status = 'active' "
+    + "AND q.id = ?"
+    + OPEN_QUEUE_ORDER;
+}
+
 async function recentEvents(db: D1Database, questId: string | undefined, limit: number) {
   const statement = db.prepare(
     "SELECT e.sequence, e.quest_id, q.slug AS quest_slug, q.title AS quest_title, "
@@ -314,13 +332,9 @@ async function listWorkQueues(db: D1Database, questId?: string) {
       + " ORDER BY c.created_at, c.id LIMIT 10",
   );
   const openStatement = db.prepare(
-    "SELECT q.id AS quest_id, q.slug AS quest_slug, q.title AS quest_title, "
-      + "h.id AS challenge_id, h.title AS challenge_title, h.description AS challenge_description, "
-      + "h.created_at AS challenge_created_at "
-      + "FROM challenges h JOIN quests q ON q.id = h.quest_id "
-      + "WHERE h.status = 'open' AND q.status = 'active'"
-      + (questId ? " AND q.id = ?" : "")
-      + " ORDER BY h.created_at, h.id LIMIT 10",
+    questId
+      ? scopedOpenQueueSql()
+      : GLOBAL_OPEN_QUEUE_SQL,
   );
   const [reviewResult, openResult] = await Promise.all([
     reviewStatement.bind(...(questId ? [questId] : [])).all<ReviewQueueRow>(),
