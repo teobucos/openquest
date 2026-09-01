@@ -10,10 +10,11 @@ import {
 describe("OpenQuest live transport protocol", () => {
   it("keeps messages compact, closed, and sequence-only", () => {
     const message = parseLiveInvalidation(serializeLiveInvalidation(42));
-    expect(message).toEqual({ sequence: 42, type: LIVE_INVALIDATION_TYPE });
-    expect(parseLiveInvalidation('{"type":"openquest.changed","sequence":42,"content":"private"}'))
+    expect(message).toEqual({ latest_sequence: 42, type: LIVE_INVALIDATION_TYPE });
+    expect(parseLiveInvalidation('{"type":"openquest.changed","latest_sequence":42,"content":"private"}'))
       .toBeNull();
-    expect(parseLiveInvalidation('{"type":"openquest.changed","sequence":-1}')).toBeNull();
+    expect(parseLiveInvalidation('{"type":"openquest.changed","sequence":42}')).toBeNull();
+    expect(parseLiveInvalidation('{"type":"openquest.changed","latest_sequence":-1}')).toBeNull();
     expect(parseLiveInvalidation("not json")).toBeNull();
   });
 

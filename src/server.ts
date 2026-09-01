@@ -101,27 +101,24 @@ async function writeIdentity(request: Request, env: Env) {
   return identity;
 }
 
-function notifyMutation(
-  context: ExecutionContext,
+async function notifyMutation(
   env: Env,
   questId: string | null | Promise<string | null>,
-): void {
-  context.waitUntil((async () => {
-    try {
-      const resolvedQuestId = await questId;
-      if (!resolvedQuestId) {
-        console.error("OpenQuest live transport could not resolve the affected Quest.");
-        return;
-      }
-      const sequence = await latestEventSequence(env.DB, resolvedQuestId);
-      await broadcastLiveInvalidation(env, resolvedQuestId, sequence);
-    } catch (cause) {
-      console.error("OpenQuest live transport publish failed", cause);
+): Promise<void> {
+  try {
+    const resolvedQuestId = await questId;
+    if (!resolvedQuestId) {
+      console.error("OpenQuest live transport could not resolve the affected Quest.");
+      return;
     }
-  })());
+    const latestSequence = await latestEventSequence(env.DB, resolvedQuestId);
+    await broadcastLiveInvalidation(env, resolvedQuestId, latestSequence);
+  } catch (cause) {
+    console.error("OpenQuest live transport publish failed", cause);
+  }
 }
 
-async function handleApi(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
+async function handleApi(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === "/api/live") {
     return upgradeLiveSocket(request, env);
@@ -160,7 +157,7 @@ async function handleApi(request: Request, env: Env, context: ExecutionContext):
     const input = await parseBody(request, CreateQuestInputSchema);
     const identity = await writeIdentity(request, env);
     const result = await createQuest(env.DB, identity.actor, input);
-    notifyMutation(context, env, result.quest_id);
+    await notifyMutation(env, result.quest_id);
     return json(result, 201, identity.setCookie);
   }
 
@@ -168,7 +165,7 @@ async function handleApi(request: Request, env: Env, context: ExecutionContext):
     const input = await parseBody(request, CreateChallengeInputSchema);
     const identity = await writeIdentity(request, env);
     const result = await createChallenge(env.DB, identity.actor, input);
-    notifyMutation(context, env, result.quest_id);
+    await notifyMutation(env, result.quest_id);
     return json(result, 201, identity.setCookie);
   }
 
@@ -176,7 +173,7 @@ async function handleApi(request: Request, env: Env, context: ExecutionContext):
     const input = await parseBody(request, SubmitContributionInputSchema);
     const identity = await writeIdentity(request, env);
     const result = await submitContribution(env.DB, identity.actor, input);
-    notifyMutation(context, env, resolveQuestIdForChallenge(env.DB, input.challenge_id));
+    await notifyMutation(env, resolveQuestIdForChallenge(env.DB, input.challenge_id));
     return json(result, 201, identity.setCookie);
   }
 
@@ -184,7 +181,7 @@ async function handleApi(request: Request, env: Env, context: ExecutionContext):
     const input = await parseBody(request, ReviewContributionInputSchema);
     const identity = await writeIdentity(request, env);
     const result = await reviewContribution(env.DB, identity.actor, input);
-    notifyMutation(context, env, resolveQuestIdForContribution(env.DB, input.contribution_id));
+    await notifyMutation(env, resolveQuestIdForContribution(env.DB, input.contribution_id));
     return json(result, 201, identity.setCookie);
   }
 
@@ -194,10 +191,9 @@ async function handleApi(request: Request, env: Env, context: ExecutionContext):
 export async function handleRequest(
   request: Request,
   env: Env,
-  context: ExecutionContext,
 ): Promise<Response> {
   try {
-    return await handleApi(request, env, context);
+    return await handleApi(request, env);
   } catch (cause) {
     if (cause instanceof HttpError || cause instanceof StoreError) {
       return json(cause.payload, cause.httpStatus);
@@ -211,7 +207,7 @@ export async function handleRequest(
 }
 
 export default {
-  fetch(request, env, context) {
-    return handleRequest(request, env, context);
+  fetch(request, env) {
+    return handleRequest(request, env);
   },
 } satisfies ExportedHandler<Env>;

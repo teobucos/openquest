@@ -21,11 +21,11 @@ function invalidLiveRequest(message: string, status = 400): Response {
 async function notifyHub(
   namespace: DurableObjectNamespace,
   name: string,
-  sequence: number,
+  latestSequence: number,
 ): Promise<void> {
   const hub = namespace.get(namespace.idFromName(name));
   const response = await hub.fetch("https://openquest-live-hub.invalid/broadcast", {
-    body: serializeLiveInvalidation(sequence),
+    body: serializeLiveInvalidation(latestSequence),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
@@ -37,11 +37,11 @@ async function notifyHub(
 export async function broadcastLiveInvalidation(
   env: LiveHubEnvironment,
   questId: string,
-  sequence: number,
+  latestSequence: number,
 ): Promise<void> {
   const names = [liveHubName(), liveHubName(questId)];
   const outcomes = await Promise.allSettled(
-    names.map((name) => notifyHub(env.LIVE_HUB, name, sequence)),
+    names.map((name) => notifyHub(env.LIVE_HUB, name, latestSequence)),
   );
   for (const [index, outcome] of outcomes.entries()) {
     if (outcome.status === "rejected") {
@@ -81,7 +81,7 @@ export class LiveHub extends DurableObject<LiveHubEnvironment> {
     if (request.method === "POST" && url.pathname === "/broadcast") {
       const message = parseLiveInvalidation(await request.text());
       if (!message) return invalidLiveRequest("Live invalidation is invalid.");
-      this.broadcast(message.sequence);
+      this.broadcast(message.latest_sequence);
       return new Response(null, { status: 204 });
     }
 
@@ -111,8 +111,8 @@ export class LiveHub extends DurableObject<LiveHubEnvironment> {
     socket.close(1011, "OpenQuest live socket failed.");
   }
 
-  private broadcast(sequence: number): void {
-    const payload = serializeLiveInvalidation(sequence);
+  private broadcast(latestSequence: number): void {
+    const payload = serializeLiveInvalidation(latestSequence);
     for (const socket of this.ctx.getWebSockets()) {
       try {
         socket.send(payload);

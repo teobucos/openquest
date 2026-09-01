@@ -11,7 +11,7 @@ const CanonicalQuestIdSchema = z
   .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
 
 const LiveInvalidationSchema = z.strictObject({
-  sequence: z.number().int().nonnegative(),
+  latest_sequence: z.number().int().nonnegative(),
   type: z.literal(LIVE_INVALIDATION_TYPE),
 });
 
@@ -30,8 +30,11 @@ export function parseLiveInvalidation(value: string): LiveInvalidation | null {
   }
 }
 
-export function serializeLiveInvalidation(sequence: number): string {
-  return JSON.stringify({ sequence, type: LIVE_INVALIDATION_TYPE } satisfies LiveInvalidation);
+export function serializeLiveInvalidation(latestSequence: number): string {
+  return JSON.stringify({
+    latest_sequence: latestSequence,
+    type: LIVE_INVALIDATION_TYPE,
+  } satisfies LiveInvalidation);
 }
 
 export function parseLiveQuestId(url: URL): string | null | undefined {

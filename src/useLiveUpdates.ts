@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { parseLiveInvalidation } from "./liveProtocol";
+import { OPENQUEST_CHANGED_EVENT } from "./useRemoteData";
 
 const DEGRADED_AFTER_MS = 5_000;
 const FALLBACK_REFRESH_MS = 12_000;
@@ -13,7 +14,6 @@ export interface LiveScope {
 
 export interface UseLiveUpdatesOptions {
   lastSequence: number;
-  onInvalidate: () => void;
   scope: LiveScope | null;
 }
 
@@ -30,17 +30,15 @@ function reconnectDelay(attempt: number): number {
 
 export function useLiveUpdates({
   lastSequence,
-  onInvalidate,
   scope,
 }: UseLiveUpdatesOptions): LiveConnectionStatus {
   const [status, setStatus] = useState<LiveConnectionStatus>("connecting");
-  const invalidateRef = useRef(onInvalidate);
-  const sequenceRef = useRef(lastSequence);
-
-  invalidateRef.current = onInvalidate;
-  sequenceRef.current = lastSequence;
-
   const scopeKey = scope?.questId ? `quest:${scope.questId}` : scope ? "network" : "pending";
+  const sequencesByScope = useRef(new Map<string, number>());
+  const currentSequence = sequencesByScope.current.get(scopeKey) ?? 0;
+  if (lastSequence > currentSequence) {
+    sequencesByScope.current.set(scopeKey, lastSequence);
+  }
 
   useEffect(() => {
     if (!scope) {
@@ -49,7 +47,7 @@ export function useLiveUpdates({
     }
     if (typeof WebSocket === "undefined") {
       setStatus("degraded");
-      const fallback = window.setInterval(() => invalidateRef.current(), FALLBACK_REFRESH_MS);
+      const fallback = window.setInterval(dispatchSnapshotInvalidation, FALLBACK_REFRESH_MS);
       return () => window.clearInterval(fallback);
     }
 
@@ -69,8 +67,8 @@ export function useLiveUpdates({
 
     const startFallback = () => {
       if (fallbackTimer !== undefined) return;
-      invalidateRef.current();
-      fallbackTimer = window.setInterval(() => invalidateRef.current(), FALLBACK_REFRESH_MS);
+      dispatchSnapshotInvalidation();
+      fallbackTimer = window.setInterval(dispatchSnapshotInvalidation, FALLBACK_REFRESH_MS);
     };
 
     const startDisconnectedTimers = () => {
@@ -93,14 +91,15 @@ export function useLiveUpdates({
         attempt = 0;
         clearDisconnectedTimers();
         setStatus("live");
-        invalidateRef.current();
+        dispatchSnapshotInvalidation();
       });
       currentSocket.addEventListener("message", (event) => {
         if (!active || socket !== currentSocket || typeof event.data !== "string") return;
         const message = parseLiveInvalidation(event.data);
-        if (!message || message.sequence <= sequenceRef.current) return;
-        sequenceRef.current = message.sequence;
-        invalidateRef.current();
+        const knownSequence = sequencesByScope.current.get(scopeKey) ?? 0;
+        if (!message || message.latest_sequence <= knownSequence) return;
+        sequencesByScope.current.set(scopeKey, message.latest_sequence);
+        dispatchSnapshotInvalidation();
       });
       currentSocket.addEventListener("close", () => {
         if (!active || socket !== currentSocket) return;
@@ -124,4 +123,8 @@ export function useLiveUpdates({
   }, [scopeKey]);
 
   return status;
+}
+
+function dispatchSnapshotInvalidation(): void {
+  window.dispatchEvent(new Event(OPENQUEST_CHANGED_EVENT));
 }
