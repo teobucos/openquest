@@ -18,6 +18,9 @@
     "test:watch": "bun test --watch tests",
     "e2e": "bun run --bun playwright test",
     "e2e:ui": "bun run --bun playwright test --ui",
+    "lint:oxlint": "oxlint --deny-warnings .",
+    "doctor": "react-doctor --yes --no-telemetry --verbose",
+    "doctor:design": "react-doctor design --yes --no-telemetry --verbose",
     "migrate:local": "bun run --bun wrangler d1 migrations apply openquest --local",
     "migrate:serve": "bun run --bun wrangler d1 migrations apply openquest --local --persist-to .runtime/state",
     "migrate:remote": "bun run --bun wrangler d1 migrations apply openquest --remote"
@@ -35,7 +38,12 @@
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
-    "typescript": "^5.8.3",
+    "oxlint": "1.80.0",
+    "oxlint-plugin-react-doctor": "0.9.12",
+    "oxlint-tsgolint": "7.0.2001",
+    "oxspark": "git+ssh://git@github.com/teobucos/oxspark.git#dc25c64017eea2d956de0d9b21c8b9c94c0b48c3",
+    "react-doctor": "0.9.12",
+    "typescript": "7.0.2",
     "vite": "^6.3.3",
     "webmcp-types": "^0.1.5",
     "wrangler": "^4.4.0"

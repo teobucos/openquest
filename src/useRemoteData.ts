@@ -71,6 +71,14 @@ export function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: 
     await committed;
   }, []);
 
+  const recordReloadFailure = useCallback((cause: unknown) => {
+    if (!mounted.current) return;
+    const message = readableError(cause);
+    setState((current) => current.data
+      ? { ...current, loading: false, refreshError: message }
+      : { ...current, error: message, loading: false, refreshError: null });
+  }, []);
+
   const loadOnce = useCallback(async () => {
     try {
       const next = await request();
@@ -95,32 +103,33 @@ export function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: 
         } while (queued.current && mounted.current);
       } finally {
         running.current = null;
-        if (queued.current && mounted.current) void reload();
+        if (queued.current && mounted.current) {
+          reload().catch(recordReloadFailure);
+        }
       }
     };
     const promise = run();
     running.current = promise;
     return promise;
-  }, [loadOnce]);
+  }, [loadOnce, recordReloadFailure]);
 
   useEffect(() => {
-    void reload();
-    const refresh = (event: Event) => {
+    const refresh = (event?: Event) => {
       const refreshed = reload();
+      refreshed.catch(recordReloadFailure);
       if (event instanceof CustomEvent) {
         const detail = event.detail as Partial<OpenQuestChangedDetail> | undefined;
         detail?.waitUntil?.(refreshed);
       }
     };
-    const timer = refreshMs
-      ? window.setInterval(() => void reload(), refreshMs)
-      : undefined;
+    refresh();
+    const timer = refreshMs ? window.setInterval(refresh, refreshMs) : undefined;
     window.addEventListener(OPENQUEST_CHANGED_EVENT, refresh);
     return () => {
       if (timer !== undefined) window.clearInterval(timer);
       window.removeEventListener(OPENQUEST_CHANGED_EVENT, refresh);
     };
-  }, [refreshMs, reload]);
+  }, [recordReloadFailure, refreshMs, reload]);
 
   return { data, error, loading, refreshError, reload };
 }
