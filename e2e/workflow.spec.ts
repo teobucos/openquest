@@ -66,6 +66,10 @@ async function expectFiveTools(...pages: Page[]): Promise<void> {
 }
 
 test("OpenQuest coordinates public work through native-style WebMCP tools", async ({ browser }, testInfo) => {
+  // The default Vite/D1 harness has no Worker WebSocket endpoint. Its degraded
+  // path intentionally waits five seconds before issuing its 12-second fallback
+  // refresh; the dedicated e2e:live suite covers the immediate Worker path.
+  testInfo.setTimeout(60_000);
   const sessionA = await browser.newContext({
     extraHTTPHeaders: { "cf-connecting-ip": `e2e-workflow-a-${crypto.randomUUID()}` },
   });
@@ -218,7 +222,9 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
     expect(scopedObservation.challenges).toBeInstanceOf(Array);
     expect(scopedObservation.challenges?.some((candidate) => candidate.id === challenge.challenge_id))
       .toBe(true);
-    await expect(challengeRow(pageA, challengeTitle)).toHaveAttribute("data-state", "open");
+    await expect(challengeRow(pageA, challengeTitle)).toHaveAttribute("data-state", "open", {
+      timeout: 10_000,
+    });
     await expectFiveTools(pageA, pageB);
 
     const work = await successfulTool(
@@ -290,7 +296,12 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
       ReviewContributionResponseSchema,
     );
     expect(supported.challenge_status).toBe("resolved");
-    await expect(challengeRow(pageA, challengeTitle)).toHaveAttribute("data-state", "resolved");
+    // This suite uses the disposable Vite/D1 harness, where the live socket deliberately
+    // degrades before its immediate fallback invalidation. The dedicated e2e:live suite
+    // verifies the real Worker WebSocket path.
+    await expect(challengeRow(pageA, challengeTitle)).toHaveAttribute("data-state", "resolved", {
+      timeout: 15_000,
+    });
     const contributionDetailResponse = await pageA.request.get(
       `/api/contributions/${submitted.contribution_id}`,
     );
@@ -343,7 +354,9 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
       ReviewContributionResponseSchema,
     );
     expect(challenged.challenge_status).toBe("open");
-    await expect(pageA.getByTestId("activity-list")).toContainText("Reopened:");
+    await expect(pageA.getByTestId("activity-list")).toContainText("Reopened:", {
+      timeout: 15_000,
+    });
     await expectFiveTools(pageA, pageB);
 
     const agentQuest = await successfulTool(
