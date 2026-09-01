@@ -18,10 +18,12 @@ import {
   StoreError,
   createChallenge,
   createQuest,
+  getChallenge,
   getContribution,
   getQuest,
   nextWork,
   observeState,
+  observeStateForSlug,
   reviewContribution,
   submitContribution,
 } from "./store";
@@ -32,6 +34,9 @@ export interface Env {
 
 const worldLimitSchema = z.coerce.number().int().min(1).max(20).default(10);
 const identifierQuerySchema = z.string().trim().min(1).max(128).optional();
+const slugQuerySchema = z.string().trim().min(3).max(80)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  .optional();
 
 class HttpError extends Error {
   public constructor(
@@ -95,7 +100,11 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET" && url.pathname === "/api/world") {
     const limit = worldLimitSchema.parse(url.searchParams.get("limit") ?? undefined);
     const questId = identifierQuerySchema.parse(url.searchParams.get("quest_id") ?? undefined);
-    return json(await observeState(env.DB, questId, limit));
+    const questSlug = slugQuerySchema.parse(url.searchParams.get("quest_slug") ?? undefined);
+    if (questId && questSlug) fail(400, "invalid_input", "Use either quest_id or quest_slug, not both.");
+    return json(questSlug
+      ? await observeStateForSlug(env.DB, questSlug, limit)
+      : await observeState(env.DB, questId, limit));
   }
 
   const questMatch = /^\/api\/quests\/([^/]+)$/.exec(url.pathname);
@@ -106,6 +115,11 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
   const contributionMatch = /^\/api\/contributions\/([^/]+)$/.exec(url.pathname);
   if (request.method === "GET" && contributionMatch) {
     return json(await getContribution(env.DB, decodeURIComponent(contributionMatch[1])));
+  }
+
+  const challengeMatch = /^\/api\/challenges\/([^/]+)$/.exec(url.pathname);
+  if (request.method === "GET" && challengeMatch) {
+    return json(await getChallenge(env.DB, decodeURIComponent(challengeMatch[1])));
   }
 
   if (request.method === "POST" && url.pathname === "/api/work/next") {
