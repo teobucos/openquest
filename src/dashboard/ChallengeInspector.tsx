@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { getChallenge } from "../api";
 import type { ChallengeDetailResponse } from "../contracts";
 import { useRemoteData } from "../useRemoteData";
@@ -23,46 +24,84 @@ function ContributionState({ status }: { status: "pending" | "accepted" | "chall
   return <span className="state-pill">CHALLENGED</span>;
 }
 
-export function ChallengeInspector({ challengeId, onClose }: { challengeId: string; onClose: () => void }) {
+const focusableSelector = "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+
+export function ChallengeInspector({
+  challengeId,
+  onClose,
+  onQuestNavigate,
+}: {
+  challengeId: string;
+  onClose: () => void;
+  onQuestNavigate: (slug: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
+}) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const inspector = useRef<HTMLElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
   const request = useCallback(() => getChallenge(challengeId), [challengeId]);
   const { data, error, loading, reload } = useRemoteData(request);
+  const close = useCallback(() => onCloseRef.current(), []);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButton.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+    const appRoot = document.getElementById("root");
+    const previousInert = appRoot?.inert ?? false;
+    if (appRoot) appRoot.inert = true;
+    const retainFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(inspector.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [])
+        .filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", retainFocus);
     return () => {
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", retainFocus);
+      if (appRoot) appRoot.inert = previousInert;
       if (returnFocus.current?.isConnected) returnFocus.current.focus();
     };
-  }, [onClose]);
+  }, [close]);
 
-  return (
+  return createPortal(
     <div className="inspector-backdrop" onMouseDown={onClose}>
-      <aside className="challenge-inspector" aria-label="Challenge inspector" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+      <aside ref={inspector} className="challenge-inspector" aria-label="Challenge inspector" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
         <div className="inspector-heading">
           <span>CHALLENGE INSPECTOR</span>
           <button ref={closeButton} className="icon-button" type="button" onClick={onClose} aria-label="Close Challenge inspector">×</button>
         </div>
         {loading && !data ? <p className="empty-copy">Loading public Challenge history…</p> : null}
         {error && !data ? <div className="error-panel"><p>{error}</p><button type="button" onClick={reload}>Try again</button></div> : null}
-        {data ? <InspectorContent data={data} /> : null}
+        {data ? <InspectorContent data={data} onQuestNavigate={onQuestNavigate} /> : null}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
-function InspectorContent({ data }: { data: ChallengeDetailResponse }) {
+function InspectorContent({ data, onQuestNavigate }: { data: ChallengeDetailResponse; onQuestNavigate: (slug: string) => (event: MouseEvent<HTMLAnchorElement>) => void }) {
   const organization = data.quest.organization;
   return (
     <div className="inspector-content">
       <div className="inspector-context">
-        <a href={`/q/${data.quest.slug}`}>{data.quest.title}</a>
+        <a href={`/q/${data.quest.slug}`} onClick={onQuestNavigate(data.quest.slug)}>{data.quest.title}</a>
         {organization ? <span>{organization.is_demo ? "DEMO · " : ""}{organization.name}</span> : <span>Community Quest</span>}
       </div>
       <h2 id="inspector-title">{data.challenge.title}</h2>

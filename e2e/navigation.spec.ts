@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test("the control center navigates scopes, filters, and inspectors without a document reload", async ({ page }) => {
   await page.goto("/");
   const navigationEntries = await page.evaluate(() => performance.getEntriesByType("navigation").length);
-  const quest = page.locator(".quest-row").first();
+  const quest = page.locator(".quest-row").filter({ hasText: /[1-9] OPEN/ }).first();
   const questHref = await quest.getAttribute("href");
   await quest.click();
   await expect(page).toHaveURL(/\/q\/[a-z0-9-]+$/);
@@ -14,6 +14,12 @@ test("the control center navigates scopes, filters, and inspectors without a doc
   await expect(page).toHaveURL(/status=open/);
   await page.locator(".work-row").first().click();
   await expect(page).toHaveURL(/challenge=/);
+  await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close Challenge inspector" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toHaveCount(0);
+  await expect(page.locator(".work-row").first()).toBeFocused();
+  await page.goBack();
   await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toBeVisible();
   await page.goBack();
   await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toHaveCount(0);
@@ -27,14 +33,34 @@ test("the control center navigates scopes, filters, and inspectors without a doc
 test("the inspector restores direct URL state and stays inside narrow viewports", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.locator(".quest-row").first().click();
+  await page.locator(".quest-row").filter({ hasText: /[1-9] OPEN/ }).first().click();
   await page.locator(".work-row").first().click();
   const inspectorUrl = page.url();
   await page.reload();
-  await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toBeVisible();
+  const inspector = page.getByRole("dialog", { name: "Challenge inspector" });
+  await expect(inspector).toBeVisible();
+  await expect(page.locator("#root")).toHaveJSProperty("inert", true);
+  const lastFocusable = inspector.locator("a[href], button:not([disabled])").last();
+  await expect(lastFocusable).toBeVisible();
+  await page.getByRole("button", { name: "Close Challenge inspector" }).press("Shift+Tab");
+  await expect(lastFocusable).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Close Challenge inspector" })).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.getByRole("button", { name: "Close Challenge inspector" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#root")).toHaveJSProperty("inert", false);
   await expect(page).not.toHaveURL(inspectorUrl);
+});
+
+test("the inspector's Quest link stays in the same History shell", async ({ page }) => {
+  await page.goto("/");
+  const navigationEntries = await page.evaluate(() => performance.getEntriesByType("navigation").length);
+  await page.locator(".work-row").first().click();
+  const questLink = page.getByRole("dialog", { name: "Challenge inspector" }).locator(".inspector-context a");
+  const href = await questLink.getAttribute("href");
+  await questLink.click();
+  await expect(page).toHaveURL(href ?? /\/q\//);
+  expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(navigationEntries);
 });
 
 test("the command center has no document horizontal overflow at target viewports", async ({ page }) => {

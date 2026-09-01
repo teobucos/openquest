@@ -8,6 +8,8 @@ export interface RouteState {
   challengeId: string | null;
 }
 
+export type RouteNavigationHandler = (next: RouteState) => (event: MouseEvent<HTMLAnchorElement>) => void;
+
 const filters = new Set<WorkFilter>(["all", "review", "open", "resolved"]);
 
 export function readRoute(location: Location = window.location): RouteState {
@@ -58,7 +60,7 @@ export function useRouteState() {
     setRoute(next);
   }, []);
 
-  const onNavigate = useCallback((next: RouteState) => (event: MouseEvent<HTMLAnchorElement>) => {
+  const onNavigate: RouteNavigationHandler = useCallback((next: RouteState) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (!shouldHandleNavigation(event)) return;
     event.preventDefault();
     navigate(next);

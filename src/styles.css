@@ -74,6 +74,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .work-copy strong { font-size: 14px; }
 .work-copy span { color: var(--muted); font-size: 12px; line-height: 1.4; }
 .work-copy small { color: var(--acid); font: 10px "DM Mono", monospace; line-height: 1.4; }
+.work-quest-title { color: var(--acid) !important; font: 10px "DM Mono", monospace !important; letter-spacing: .04em; }
+.work-challenge-description { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .activity-list { max-height: 630px; overflow: auto; }
 .activity-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 10px; padding: 15px; border-bottom: 1px solid var(--line); }
 .activity-icon { color: var(--acid); font: 11px "DM Mono", monospace; }

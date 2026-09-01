@@ -1,10 +1,10 @@
-import { useMemo, useState, type FormEvent, type MouseEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { createQuest } from "../api";
 import type { ObserveResponse } from "../contracts";
 import { readableError } from "../useRemoteData";
 import type { WebMCPToolsState } from "../useWebMCPTools";
 import { ChallengeInspector } from "./ChallengeInspector";
-import type { RouteState, WorkFilter } from "./navigation";
+import type { RouteNavigationHandler, RouteState, WorkFilter } from "./navigation";
 
 type LiveStatus = "connecting" | "live" | "reconnecting" | "degraded";
 
@@ -14,10 +14,6 @@ const filters: Array<{ label: string; value: WorkFilter }> = [
   { label: "OPEN", value: "open" },
   { label: "RESOLVED", value: "resolved" },
 ];
-
-function isPlainInternalClick(event: MouseEvent<HTMLAnchorElement>) {
-  return event.button === 0 && !event.defaultPrevented && !event.metaKey && !event.altKey && !event.ctrlKey && !event.shiftKey;
-}
 
 function LiveIndicator({ status, error }: { status: LiveStatus; error: string | null }) {
   const label = error ? "DEGRADED" : status.toUpperCase();
@@ -86,6 +82,7 @@ export function ControlCenter({
   tools,
   route,
   navigate,
+  onNavigate,
   refreshError,
   liveStatus = "connecting",
 }: {
@@ -93,6 +90,7 @@ export function ControlCenter({
   tools: WebMCPToolsState;
   route: RouteState;
   navigate: (route: RouteState) => void;
+  onNavigate: RouteNavigationHandler;
   refreshError: string | null;
   liveStatus?: LiveStatus;
 }) {
@@ -107,13 +105,13 @@ export function ControlCenter({
   return (
     <div className="app-shell">
       <header className="site-header">
-        <a className="brand" href="/" onClick={(event) => { if (!isPlainInternalClick(event)) return; event.preventDefault(); navigate({ scope: { kind: "network" }, filter: "all", challengeId: null }); }} aria-label="OpenQuest network"><span className="brand-mark">OQ</span>OPENQUEST</a>
+        <a className="brand" href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })} aria-label="OpenQuest network"><span className="brand-mark">OQ</span>OPENQUEST</a>
         <ToolStatus tools={tools} />
       </header>
       <main className="control-center">
         <section className="scope-header" aria-labelledby="scope-title">
           <div>
-            {scopedQuest ? <a className="back-link" href="/" onClick={(event) => { if (!isPlainInternalClick(event)) return; event.preventDefault(); navigate({ scope: { kind: "network" }, filter: route.filter, challengeId: null }); }}>← WHOLE NETWORK</a> : null}
+            {scopedQuest ? <a className="back-link" href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: route.filter, challengeId: null })}>← WHOLE NETWORK</a> : null}
             <h1 id="scope-title">{scopeTitle}</h1>
             <p>{scopedQuest ? scopedQuest.goal : "Public work moving through the Quest primitive pipeline."}</p>
             {scopedQuest ? <div className="scope-provenance"><span>{scopedQuest.status.toUpperCase()} QUEST</span>{scopedQuest.organization ? <span>{scopedQuest.organization.is_demo ? "DEMO · " : ""}{scopedQuest.organization.name} · {scopedQuest.organization.category}</span> : <span>COMMUNITY QUEST</span>}</div> : null}
@@ -139,7 +137,7 @@ export function ControlCenter({
               {visibleWork.map((item) => (
                 <button className="work-row" type="button" key={`${item.stream_state}-${item.challenge.id}`} data-state={item.stream_state} onClick={() => navigate(scopeRoute({ challengeId: item.challenge.id }))}>
                   <span className="work-state">{streamLabel(item.stream_state)}</span>
-                  <span className="work-copy"><strong>{item.challenge.title}</strong><span>{route.scope.kind === "network" ? item.quest.title : item.challenge.description}</span>{item.contribution ? <small>{item.stream_state === "resolved" ? "RESULT: " : "CONTRIBUTION: "}{item.contribution.summary}</small> : null}</span>
+                  <span className="work-copy"><strong>{item.challenge.title}</strong>{route.scope.kind === "network" ? <span className="work-quest-title">{item.quest.title}</span> : null}<span className="work-challenge-description">{item.challenge.description}</span>{item.contribution ? <small>{item.stream_state === "resolved" ? "RESULT: " : "CONTRIBUTION: "}{item.contribution.summary}</small> : null}</span>
                   <time dateTime={item.stream_state === "resolved" ? item.challenge.updated_at : item.challenge.created_at}>{timestamp(item.stream_state === "resolved" ? item.challenge.updated_at : item.challenge.created_at)}</time>
                 </button>
               ))}
@@ -156,7 +154,7 @@ export function ControlCenter({
           </section>
 
           <aside className="command-rail" aria-label="OpenQuest context">
-            {route.scope.kind === "network" ? <QuestList data={data} route={route} navigate={navigate} /> : <QuestContext quest={scopedQuest} data={data} />}
+            {route.scope.kind === "network" ? <QuestList data={data} route={route} onNavigate={onNavigate} /> : <QuestContext quest={scopedQuest} data={data} />}
             <section className="ops-panel contributor-panel"><div className="panel-heading"><h2>RECENT CONTRIBUTORS</h2><span>{data.contributor_count} TOTAL</span></div><div className="contributor-list">{data.recent_contributors.map((contributor) => <div className="contributor-row" key={contributor.actor_label}><span className="contributor-avatar">{contributor.actor_label.slice(-2)}</span><span className="contributor-copy"><strong>{contributor.actor_label}</strong><span>{contributor.last_summary}</span></span><span className="recent-badge">{contributor.activity_count} EVT</span></div>)}{data.recent_contributors.length === 0 ? <p className="empty-copy">No durable contributor activity yet.</p> : null}</div></section>
             <section className="ops-panel webmcp-panel"><div className="panel-heading"><h2>WEBMCP</h2><span>{tools.registered ? "READY" : "UNAVAILABLE"}</span></div><p className="agent-instruction">Use with an agent: “Help move this Quest forward.”</p><code>openquest_observe · openquest_next · openquest_submit · openquest_review · openquest_propose</code></section>
             {route.scope.kind === "network" ? <CreateQuestForm onCreated={(slug) => navigate({ scope: { kind: "quest", slug }, filter: "all", challengeId: null })} /> : null}
@@ -164,7 +162,7 @@ export function ControlCenter({
         </div>
       </main>
       <footer><span>Quest → Challenge → Contribution → Review → Resolved</span><span>Open source · Public work</span></footer>
-      {route.challengeId ? <ChallengeInspector challengeId={route.challengeId} onClose={() => navigate(scopeRoute({ challengeId: null }))} /> : null}
+      {route.challengeId ? <ChallengeInspector challengeId={route.challengeId} onClose={() => navigate(scopeRoute({ challengeId: null }))} onQuestNavigate={(slug) => onNavigate({ scope: { kind: "quest", slug }, filter: route.filter, challengeId: null })} /> : null}
     </div>
   );
 }
@@ -173,8 +171,8 @@ function Metric({ label, detail, value, tone }: { label: string; detail: string;
   return <div className="telemetry-cell" data-tone={tone}><span>{label}</span><small>{detail}</small><strong>{value}</strong></div>;
 }
 
-function QuestList({ data, route, navigate }: { data: ObserveResponse; route: RouteState; navigate: (route: RouteState) => void }) {
-  return <section className="ops-panel quest-list-panel"><div className="panel-heading"><h2>QUESTS</h2><span>{data.quests.length} VISIBLE</span></div><div className="quest-list">{data.quests.map((quest) => <a className="quest-row" href={`/q/${quest.slug}`} key={quest.id} onClick={(event) => { if (!isPlainInternalClick(event)) return; event.preventDefault(); navigate({ scope: { kind: "quest", slug: quest.slug }, filter: route.filter, challengeId: null }); }}><strong>{quest.title}</strong><span>{quest.goal}</span><small>{quest.counts.open} OPEN · {quest.counts.awaiting_review} REVIEW · {quest.counts.resolved} RESOLVED</small></a>)}{data.quests.length === 0 ? <p className="empty-copy">No active Quests.</p> : null}</div></section>;
+function QuestList({ data, route, onNavigate }: { data: ObserveResponse; route: RouteState; onNavigate: RouteNavigationHandler }) {
+  return <section className="ops-panel quest-list-panel"><div className="panel-heading"><h2>QUESTS</h2><span>{data.quests.length} VISIBLE</span></div><div className="quest-list">{data.quests.map((quest) => <a className="quest-row" href={`/q/${quest.slug}`} key={quest.id} onClick={onNavigate({ scope: { kind: "quest", slug: quest.slug }, filter: route.filter, challengeId: null })}><strong>{quest.title}</strong><span>{quest.goal}</span><small>{quest.counts.open} OPEN · {quest.counts.awaiting_review} REVIEW · {quest.counts.resolved} RESOLVED</small></a>)}{data.quests.length === 0 ? <p className="empty-copy">No active Quests.</p> : null}</div></section>;
 }
 
 function QuestContext({ quest, data }: { quest: ObserveResponse["quests"][number] | null; data: ObserveResponse }) {
