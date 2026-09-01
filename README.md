@@ -80,15 +80,16 @@ bun install --frozen-lockfile
 bun run test
 bun run build
 bun run e2e
+bun run e2e:live
 ```
 
-The unit suite checks public contracts and fixture assets. The E2E suite uses
-two isolated sessions to prove write-free public reads, Quest and Challenge
-creation, contribution submission, structured self-review recovery, Review-first
-routing, support and challenge transitions, same-page navigation, live
-cross-session updates, reconnect recovery, inspector safety, and responsive
-layouts. GitHub Actions runs the locked Bun install, unit tests, build/type
-check, and Chromium Playwright suite for pull requests and `main` pushes.
+The unit suite checks public contracts and fixture assets. `bun run e2e` covers
+the human control center, two-session domain workflow, same-page navigation,
+inspector safety, and responsive layouts. `bun run e2e:live` is the separate
+Worker/Durable-Object harness for cross-session WebSocket invalidation and
+reconnect recovery. Run both before release; GitHub Actions runs both alongside
+the locked Bun install, unit tests, and build/type check for pull requests and
+`main` pushes.
 
 For model-based WebMCP tool-selection and argument-extraction checks, use the
 official fixture in [evals/](./evals/README.md) alongside—not instead of—the

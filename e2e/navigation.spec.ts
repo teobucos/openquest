@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { installFakeWebMcp, registeredTools } from "./helpers";
 
 test("the control center navigates scopes, filters, and inspectors without a document reload", async ({ page }) => {
   await page.goto("/");
@@ -61,6 +62,33 @@ test("the inspector's Quest link stays in the same History shell", async ({ page
   await questLink.click();
   await expect(page).toHaveURL(href ?? /\/q\//);
   expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(navigationEntries);
+});
+
+test("a human-created Quest keeps the same document and the five registered tools", async ({ browser }) => {
+  const context = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `e2e-human-create-${crypto.randomUUID()}` },
+  });
+  await installFakeWebMcp(context);
+  const page = await context.newPage();
+  try {
+    await page.goto("/");
+    await expect(page.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
+    const navigationEntries = await page.evaluate(() => performance.getEntriesByType("navigation").length);
+    const initialTools = await registeredTools(page);
+    expect(initialTools).toHaveLength(5);
+
+    await page.getByText("CREATE A QUEST", { exact: true }).click();
+    await page.getByLabel("Title").fill(`Human navigation ${crypto.randomUUID()}`);
+    await page.getByLabel("Goal").fill("Prove that a human Quest creation changes route state without replacing the mounted application.");
+    await page.getByLabel("Description").fill("This deterministic browser form fixture stays entirely public.");
+    await page.getByRole("button", { name: "Create Quest" }).click();
+
+    await expect(page).toHaveURL(/\/q\/human-navigation-[a-z0-9-]+$/);
+    expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(navigationEntries);
+    expect(await registeredTools(page)).toEqual(initialTools);
+  } finally {
+    await context.close();
+  }
 });
 
 test("the command center has no document horizontal overflow at target viewports", async ({ page }) => {

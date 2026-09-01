@@ -18,7 +18,7 @@ export default defineConfig({
   webServer: {
     command: "bun run build && rm -rf .wrangler/state && bun run migrate:local && bun run --bun vite preview --configLoader native --host 127.0.0.1 --port 4174 --strictPort",
     url: "http://127.0.0.1:4174",
-    // The v1 database is disposable; each run verifies the rewritten initial migration.
+    // The v1 database is disposable; each run applies the additive D1 migration sequence.
     reuseExistingServer: false,
     timeout: 120_000,
   },

@@ -327,8 +327,8 @@ test("Quest previews stay bounded and omit full Contribution work", async ({ bro
       {
         name: "openquest_propose",
         input: {
-          description: "A Quest used to verify bounded Challenge previews and compact polling payloads.",
-          goal: "Verify that monitoring remains correct and compact after more than one hundred Challenges.",
+          description: "A Quest used to verify bounded Challenge previews and monitoring projections.",
+          goal: "Verify that the bounded monitoring projection remains correct after more than one hundred Challenges.",
           kind: "quest",
           title: questTitle,
         },

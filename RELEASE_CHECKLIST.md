@@ -1,0 +1,39 @@
+# OpenQuest release handoff checklist
+
+This is an owner-operated release checklist, not a claim that a release has
+occurred. Every box below is deliberately unchecked until its named owner has
+recorded the evidence for the target deployment.
+
+## Repository verification
+
+- [ ] Run `bun install --frozen-lockfile`, `bun run test`, `bun run build`,
+  `bun run e2e`, and `bun run e2e:live` on the release commit.
+- [ ] Confirm the deterministic demo migration, seed, and verification commands
+  against the selected target without resetting public records.
+- [ ] Review the release diff for the exactly five WebMCP tools and closed
+  public inputs.
+
+## External deployment and public-operation gates
+
+- [ ] Owner creates and binds the intended production D1 database and Durable
+  Object migration in `wrangler.jsonc`.
+- [ ] Owner applies remote migrations, deliberately seeds the fictional demo
+  once, verifies it, and deploys the Worker.
+- [ ] Owner records the HTTPS deployment URL and verifies its WebSocket upgrade
+  and reconnect behavior in the deployed environment.
+- [ ] Owner uses a WebMCP-capable native browser to inspect and invoke all five
+  tools; Playwright's fake runtime is not evidence for this gate.
+- [ ] Owner completes the two genuinely isolated-session contribution, Review,
+  Result, and live-update walkthrough on the deployed URL.
+- [ ] Owner checks public content, evidence links, responsive views, and the
+  fictional `DEMO` organization labeling on the deployed control center.
+- [ ] Owner reviews repository files and history for secrets and decides whether
+  and when the repository may be made public.
+
+## Submission artifacts
+
+- [ ] Owner records the required public/native/browser evidence and any timing
+  observations from the walkthrough.
+- [ ] Owner records or publishes the required product video.
+- [ ] Owner creates the intended release tag and release notes only after the
+  preceding gates have evidence.

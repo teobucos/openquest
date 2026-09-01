@@ -22,8 +22,8 @@ seeding.
 
 ## Local demo setup
 
-The organization migration must be applied before this seed. The integrated
-repository provides that additive migration; this fixture intentionally does
+The additive live-domain migration must be applied before this seed. The
+integrated repository provides that migration; this fixture intentionally does
 not rewrite the existing initial migration.
 
 ```bash
