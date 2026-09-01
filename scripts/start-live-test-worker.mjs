@@ -5,7 +5,10 @@ import {
   unstable_splitSqlQuery,
 } from "wrangler";
 
-const { workerOptions } = unstable_getMiniflareWorkerOptions("wrangler.jsonc");
+// Use the generated deployment config rather than the source config. The Vite
+// plugin rewrites its assets directory to dist/client, which is the route the
+// deployed Worker uses for the control-center SPA.
+const { workerOptions } = unstable_getMiniflareWorkerOptions("dist/openquest/wrangler.json");
 const { modulesRules, ...runtimeOptions } = workerOptions;
 const miniflare = new Miniflare({
   ...convertV4MiniflareOptions({
@@ -13,7 +16,7 @@ const miniflare = new Miniflare({
       ...runtimeOptions,
       modules: true,
       name: "openquest-live-test",
-      scriptPath: "dist/openquest/index.js",
+      scriptPath: "index.js",
     }],
   }),
   host: "127.0.0.1",

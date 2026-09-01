@@ -1,216 +1,178 @@
 import { expect, test, type Page } from "@playwright/test";
-import { CreateQuestResponseSchema } from "../src/contracts";
-import { LIVE_INVALIDATION_TYPE, parseLiveInvalidation } from "../src/liveProtocol";
-
-interface LiveClientState {
-  events: number;
-  refreshes: number;
-  scope: { questId?: string };
-  status: string;
-}
-
-interface FakeLiveSocket {
-  emitClose(): void;
-  emitMessage(data: string): void;
-  emitOpen(): void;
-}
+import {
+  CreateChallengeResponseSchema,
+  CreateQuestResponseSchema,
+  ReviewContributionResponseSchema,
+  SubmitContributionResponseSchema,
+} from "../src/contracts";
 
 declare global {
   interface Window {
-    __openquestFakeLiveSockets?: FakeLiveSocket[];
-    __openquestRawLiveMessages?: string[];
-    __openquestRawLiveSocket?: WebSocket;
+    __openquestTrackedSockets?: WebSocket[];
   }
 }
 
-async function liveClientState(page: Page): Promise<LiveClientState | undefined> {
-  return page.evaluate(() => window.__openquestLiveTest);
+function challengeRow(page: Page, title: string) {
+  return page.locator(".work-row").filter({ hasText: title });
 }
 
-async function waitForLive(page: Page): Promise<void> {
-  await expect.poll(async () => (await liveClientState(page))?.status).toBe("live");
-  await expect.poll(async () => (await liveClientState(page))?.refreshes ?? 0).toBeGreaterThan(0);
-}
-
-async function openRawLiveSocket(page: Page, path: string): Promise<void> {
-  await page.evaluate(async (socketPath) => {
-    const messages: string[] = [];
-    const socket = new WebSocket(socketPath);
-    window.__openquestRawLiveMessages = messages;
-    window.__openquestRawLiveSocket = socket;
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("error", () => reject(new Error("WebSocket failed to open.")), { once: true });
-      socket.addEventListener("open", () => resolve(), { once: true });
-    });
-    socket.addEventListener("message", (event) => {
-      if (typeof event.data === "string") messages.push(event.data);
-    });
-  }, path);
-}
-
-function expectCompactInvalidation(raw: string): number {
-  const parsed = parseLiveInvalidation(raw);
-  expect(parsed).not.toBeNull();
-  const payload = JSON.parse(raw);
-  expect(Object.keys(payload).sort()).toEqual(["latest_sequence", "type"]);
-  expect(parsed).toMatchObject({ type: LIVE_INVALIDATION_TYPE });
-  return parsed?.latest_sequence ?? 0;
-}
-
-test("a committed mutation refreshes an isolated live client through Worker WebSockets", async ({ browser }) => {
-  const writer = await browser.newContext({
-    extraHTTPHeaders: { "cf-connecting-ip": `live-writer-${crypto.randomUUID()}` },
+async function createQuest(page: Page, title: string) {
+  const response = await page.request.post("/api/quests", {
+    data: {
+      description: "A real Worker fixture used to verify live control-center state propagation.",
+      goal: "Prove two isolated dashboard sessions receive canonical D1 state through WebSocket invalidation.",
+      title,
+    },
   });
-  const reader = await browser.newContext({
-    extraHTTPHeaders: { "cf-connecting-ip": `live-reader-${crypto.randomUUID()}` },
+  expect(response.status()).toBe(201);
+  return CreateQuestResponseSchema.parse(await response.json());
+}
+
+async function createChallenge(page: Page, questId: string, title: string) {
+  const response = await page.request.post("/api/challenges", {
+    data: {
+      description: "A real Worker Challenge used to verify open, Review, and resolved dashboard rows without polling.",
+      quest_id: questId,
+      title,
+    },
   });
-  const writerPage = await writer.newPage();
-  const readerPage = await reader.newPage();
-  const rawNetworkPage = await reader.newPage();
+  expect(response.status()).toBe(201);
+  return CreateChallengeResponseSchema.parse(await response.json());
+}
+
+async function openQuestDashboard(page: Page, slug: string, title: string) {
+  const response = await page.goto(`/q/${slug}`);
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { name: `OPENQUEST / ${title}` })).toBeVisible();
+  await expect(page.locator(".live-indicator")).toHaveText("LIVE");
+}
+
+test("the generated Worker assets serve the real control-center SPA", async ({ page }) => {
+  const response = await page.goto("/");
+  expect(response?.status()).toBe(200);
+  expect(response?.headers()["content-type"]).toContain("text/html");
+  await expect(page.getByRole("heading", { name: "OPENQUEST CONTROL CENTER" })).toBeVisible();
+  await expect(page.locator(".live-indicator")).toHaveText("LIVE");
+});
+
+test("two isolated dashboards receive open, Review, and Result state through Worker WebSockets", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const contributor = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `live-contributor-${crypto.randomUUID()}` },
+  });
+  const reviewer = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `live-reviewer-${crypto.randomUUID()}` },
+  });
+  const contributorPage = await contributor.newPage();
+  const reviewerPage = await reviewer.newPage();
+  let reviewerWorldReads = 0;
+  reviewerPage.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/world") reviewerWorldReads += 1;
+  });
 
   try {
-    await writerPage.goto("/api/world");
-    await readerPage.goto("/e2e/live-client.html");
-    await rawNetworkPage.goto("/api/world");
-    await openRawLiveSocket(rawNetworkPage, "ws://127.0.0.1:4178/api/live");
-    await waitForLive(readerPage);
+    await contributorPage.goto("/");
+    const questTitle = `Live dashboard Quest ${crypto.randomUUID()}`;
+    const quest = await createQuest(contributorPage, questTitle);
+    await openQuestDashboard(contributorPage, quest.slug, questTitle);
+    await openQuestDashboard(reviewerPage, quest.slug, questTitle);
+    await reviewerPage.waitForTimeout(300);
+    const healthyWorldReads = reviewerWorldReads;
+    await reviewerPage.waitForTimeout(1_600);
+    expect(reviewerWorldReads).toBe(healthyWorldReads);
 
-    const beforeMutation = await liveClientState(readerPage);
-    await readerPage.waitForTimeout(1_200);
-    expect((await liveClientState(readerPage))?.refreshes).toBe(beforeMutation?.refreshes);
+    const challengeTitle = `Live state Challenge ${crypto.randomUUID()}`;
+    const challenge = await createChallenge(contributorPage, quest.quest_id, challengeTitle);
+    await expect(challengeRow(reviewerPage, challengeTitle)).toHaveAttribute("data-state", "open");
+    await expect(reviewerPage.getByTestId("activity-list")).toContainText(`New Challenge: ${challengeTitle}`);
 
-    const createdResponse = await writerPage.evaluate(async (title) => {
-      const response = await fetch("/api/quests", {
-        body: JSON.stringify({
-          description: "A Worker WebSocket verification fixture with no domain payload in its transport message.",
-          goal: "Verify that a second session refreshes from a committed mutation without polling.",
-          title,
-        }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      return { body: await response.text(), status: response.status };
-    }, `Live transport Quest ${crypto.randomUUID()}`);
-    expect(createdResponse.status).toBe(201);
-    const created = CreateQuestResponseSchema.parse(JSON.parse(createdResponse.body));
+    const submittedResponse = await contributorPage.request.post("/api/contributions", {
+      data: {
+        challenge_id: challenge.challenge_id,
+        content: "This complete public Contribution is sent while both real dashboard sockets are healthy.",
+        evidence: [{ title: "Live contribution evidence", url: "https://example.com/live-contribution" }],
+        summary: "A live Contribution ready for independent Review.",
+      },
+    });
+    expect(submittedResponse.status()).toBe(201);
+    const submitted = SubmitContributionResponseSchema.parse(await submittedResponse.json());
+    await expect(challengeRow(reviewerPage, challengeTitle)).toHaveAttribute("data-state", "review");
+    await expect(reviewerPage.getByTestId("activity-list")).toContainText("Contribution submitted");
 
-    await expect.poll(async () => (await liveClientState(readerPage))?.events ?? 0)
-      .toBeGreaterThan((beforeMutation?.events ?? 0));
-    await expect.poll(async () => rawNetworkPage.evaluate(() => (
-      window.__openquestRawLiveMessages?.length ?? 0
-    ))).toBe(1);
-    const networkMessages = await rawNetworkPage.evaluate(() => window.__openquestRawLiveMessages ?? []);
-    const questSequence = expectCompactInvalidation(networkMessages[0] ?? "");
-
-    const questClientPage = await reader.newPage();
-    const rawQuestPage = await reader.newPage();
-    await questClientPage.goto(`/e2e/live-client.html?quest_id=${encodeURIComponent(created.quest_id)}`);
-    await rawQuestPage.goto("/api/world");
-    await openRawLiveSocket(rawQuestPage, `ws://127.0.0.1:4178/api/live?quest_id=${encodeURIComponent(created.quest_id)}`);
-    await waitForLive(questClientPage);
-    expect((await liveClientState(questClientPage))?.scope).toEqual({ questId: created.quest_id });
-
-    const networkBeforeChallenge = await rawNetworkPage.evaluate(() => (
-      window.__openquestRawLiveMessages?.length ?? 0
-    ));
-    const questBeforeChallenge = await rawQuestPage.evaluate(() => (
-      window.__openquestRawLiveMessages?.length ?? 0
-    ));
-    const questClientBefore = await liveClientState(questClientPage);
-    const challengeResponse = await writerPage.evaluate(async (questId) => {
-      const response = await fetch("/api/challenges", {
-        body: JSON.stringify({
-          description: "Confirm network and Quest scopes both receive the committed event sequence.",
-          quest_id: questId,
-          title: "Live scope verification Challenge",
-        }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      return response.status;
-    }, created.quest_id);
-    expect(challengeResponse).toBe(201);
-
-    await expect.poll(async () => rawNetworkPage.evaluate(() => (
-      window.__openquestRawLiveMessages?.length ?? 0
-    ))).toBe(networkBeforeChallenge + 1);
-    await expect.poll(async () => rawQuestPage.evaluate(() => (
-      window.__openquestRawLiveMessages?.length ?? 0
-    ))).toBe(questBeforeChallenge + 1);
-    await expect.poll(async () => (await liveClientState(questClientPage))?.events ?? 0)
-      .toBeGreaterThan(questClientBefore?.events ?? 0);
-
-    const questMessages = await rawQuestPage.evaluate(() => window.__openquestRawLiveMessages ?? []);
-    const challengeSequence = expectCompactInvalidation(questMessages[0] ?? "");
-    expect(challengeSequence).toBeGreaterThan(questSequence);
+    const reviewResponse = await reviewerPage.request.post("/api/reviews", {
+      data: {
+        contribution_id: submitted.contribution_id,
+        evidence: [{ title: "Live review evidence", url: "https://example.com/live-review" }],
+        reason: "The isolated reviewer confirmed this public Contribution.",
+        verdict: "support",
+      },
+    });
+    expect(reviewResponse.status()).toBe(201);
+    ReviewContributionResponseSchema.parse(await reviewResponse.json());
+    await expect(challengeRow(contributorPage, challengeTitle)).toHaveAttribute("data-state", "resolved");
+    await expect(challengeRow(reviewerPage, challengeTitle)).toHaveAttribute("data-state", "resolved");
+    await expect(contributorPage.getByTestId("activity-list")).toContainText(`Resolved: ${challengeTitle}`);
   } finally {
-    await writer.close();
-    await reader.close();
+    await contributor.close();
+    await reviewer.close();
   }
 });
 
-test("the live hook degrades, falls back, reconnects, and ignores a prior scope generation", async ({ page }) => {
-  await page.addInitScript(() => {
-    class FakeWebSocket extends EventTarget {
-      public static readonly OPEN = 1;
-      public readyState = 0;
-
-      public constructor() {
-        super();
-        window.__openquestFakeLiveSockets ??= [];
-        window.__openquestFakeLiveSockets.push(this);
-      }
-
-      public close(): void {
-        this.readyState = 3;
-        this.dispatchEvent(new CloseEvent("close"));
-      }
-
-      public emitClose(): void {
-        this.close();
-      }
-
-      public emitMessage(data: string): void {
-        this.dispatchEvent(new MessageEvent("message", { data }));
-      }
-
-      public emitOpen(): void {
-        this.readyState = FakeWebSocket.OPEN;
-        this.dispatchEvent(new Event("open"));
+test("a disconnected dashboard refreshes missed canonical D1 state after reconnecting", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const disconnected = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `live-disconnected-${crypto.randomUUID()}` },
+  });
+  await disconnected.addInitScript(() => {
+    const NativeWebSocket = window.WebSocket;
+    const sockets: WebSocket[] = [];
+    class TrackingWebSocket extends NativeWebSocket {
+      public constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        sockets.push(this);
       }
     }
-
-    Object.defineProperty(window, "WebSocket", { configurable: true, value: FakeWebSocket });
+    window.__openquestTrackedSockets = sockets;
+    window.WebSocket = TrackingWebSocket;
   });
-  await page.goto("/e2e/live-client.html");
-  expect(await page.evaluate(() => window.WebSocket.name)).toBe("FakeWebSocket");
-  await expect.poll(() => page.evaluate(() => window.__openquestFakeLiveSockets?.length ?? 0)).toBe(1);
-  await expect.poll(async () => (await liveClientState(page))?.status, { timeout: 7_000 }).toBe("degraded");
-  await expect.poll(async () => (await liveClientState(page))?.refreshes ?? 0).toBeGreaterThan(0);
-  await page.evaluate(() => window.__openquestFakeLiveSockets?.[0]?.emitOpen());
-  await waitForLive(page);
+  const writer = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `live-writer-${crypto.randomUUID()}` },
+  });
+  const disconnectedPage = await disconnected.newPage();
+  const writerPage = await writer.newPage();
 
-  const initial = await liveClientState(page);
-  await page.evaluate(() => window.__setOpenQuestLiveScope?.("quest_scope_race"));
-  await expect.poll(() => page.evaluate(() => window.__openquestFakeLiveSockets?.length ?? 0)).toBe(2);
-  await page.evaluate(() => window.__openquestFakeLiveSockets?.[0]?.emitMessage(
-    '{"latest_sequence":99,"type":"openquest.changed"}',
-  ));
-  await page.waitForTimeout(100);
-  expect((await liveClientState(page))?.events).toBe(initial?.events);
-  await page.evaluate(() => window.__openquestFakeLiveSockets?.[1]?.emitOpen());
-  await waitForLive(page);
+  try {
+    await disconnectedPage.goto("/");
+    const questTitle = `Recovery Quest ${crypto.randomUUID()}`;
+    const quest = await createQuest(disconnectedPage, questTitle);
+    await openQuestDashboard(disconnectedPage, quest.slug, questTitle);
+    await openQuestDashboard(writerPage, quest.slug, questTitle);
 
-  await page.evaluate(() => window.__openquestFakeLiveSockets?.[1]?.emitClose());
-  await expect.poll(async () => (await liveClientState(page))?.status).toBe("reconnecting");
-  await expect.poll(() => page.evaluate(() => window.__openquestFakeLiveSockets?.length ?? 0)).toBe(3);
-  await expect.poll(async () => (await liveClientState(page))?.status, { timeout: 7_000 }).toBe("degraded");
+    await expect.poll(() => disconnectedPage.evaluate(() => window.__openquestTrackedSockets?.length ?? 0))
+      .toBeGreaterThan(0);
+    await disconnectedPage.evaluate(async () => {
+      let socket: WebSocket | undefined;
+      for (const candidate of window.__openquestTrackedSockets ?? []) {
+        if (candidate.readyState === WebSocket.OPEN) socket = candidate;
+      }
+      if (!socket) throw new Error("Expected the dashboard's native live socket to be open.");
+      await new Promise<void>((resolve) => {
+        socket.addEventListener("close", () => resolve(), { once: true });
+        socket.close();
+      });
+    });
+    await expect(disconnectedPage.locator(".live-indicator")).toHaveText("RECONNECTING");
 
-  const degraded = await liveClientState(page);
-  await page.evaluate(() => window.__openquestFakeLiveSockets?.[2]?.emitOpen());
-  await waitForLive(page);
-  const recovered = await liveClientState(page);
-  await page.waitForTimeout(750);
-  expect((await liveClientState(page))?.events).toBe(recovered?.events);
-  expect(recovered?.events).toBeGreaterThan(degraded?.events ?? 0);
+    const challengeTitle = `Recovered Challenge ${crypto.randomUUID()}`;
+    await createChallenge(writerPage, quest.quest_id, challengeTitle);
+    await expect(challengeRow(writerPage, challengeTitle)).toHaveAttribute("data-state", "open");
+    await expect(challengeRow(disconnectedPage, challengeTitle)).toHaveCount(0);
+
+    await expect(disconnectedPage.locator(".live-indicator")).toHaveText("LIVE");
+    await expect(challengeRow(disconnectedPage, challengeTitle)).toHaveAttribute("data-state", "open");
+    await expect(disconnectedPage.getByTestId("activity-list")).toContainText(`New Challenge: ${challengeTitle}`);
+  } finally {
+    await disconnected.close();
+    await writer.close();
+  }
 });

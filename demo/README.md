@@ -22,9 +22,11 @@ seeding.
 
 ## Local demo setup
 
-The additive live-domain migration must be applied before this seed. The
-integrated repository provides that migration; this fixture intentionally does
-not rewrite the existing initial migration.
+The additive live-domain migration must be applied before this seed. `0001` is
+intentionally not rewritten: the repository cannot authoritatively establish
+whether a shared remote D1 database has already applied it, and rewriting that
+history could invalidate an existing deployment. The explicit `demo_` fixture
+is additive and remains separately identifiable from those legacy records.
 
 ```bash
 bun run demo:setup:local

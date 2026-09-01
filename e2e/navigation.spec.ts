@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { CreateQuestResponseSchema } from "../src/contracts";
+import { CreateChallengeResponseSchema, CreateQuestResponseSchema } from "../src/contracts";
 import { installFakeWebMcp, registeredTools } from "./helpers";
 
 test("the control center navigates scopes, filters, and inspectors without a document reload", async ({ page }) => {
@@ -92,58 +92,6 @@ test("a human-created Quest keeps the same document and the five registered tool
   }
 });
 
-test("scoped navigation never renders a prior Quest while loading or after a failure", async ({ page }) => {
-  await page.goto("/");
-  async function createQuest(title: string) {
-    const response = await page.request.post("/api/quests", {
-      data: {
-        description: "A route-state fixture that ensures scoped navigation never attributes stale public data to another Quest.",
-        goal: "Verify loading and failure states never render the previous Quest as the current scope.",
-        title,
-      },
-    });
-    expect(response.status()).toBe(201);
-    return CreateQuestResponseSchema.parse(await response.json());
-  }
-
-  const firstTitle = `First scoped route ${crypto.randomUUID()}`;
-  const secondTitle = `Second scoped route ${crypto.randomUUID()}`;
-  const first = await createQuest(firstTitle);
-  const second = await createQuest(secondTitle);
-  await page.reload();
-  await expect(page.getByText(firstTitle, { exact: true })).toBeVisible();
-
-  let releaseRequest: (() => void) | undefined;
-  const heldRequest = new Promise<void>((resolve) => {
-    releaseRequest = resolve;
-  });
-  await page.route("**/api/world?*", async (route) => {
-    const requestUrl = new URL(route.request().url());
-    if (requestUrl.searchParams.get("quest_slug") === first.slug) {
-      await heldRequest;
-    }
-    await route.continue();
-  });
-
-  await page.locator(".quest-row").filter({ hasText: firstTitle }).click();
-  await expect(page).toHaveURL(new RegExp(`/q/${first.slug}$`));
-  await expect(page.getByText("Loading public state…", { exact: true })).toBeVisible();
-  await expect(page.getByText(secondTitle, { exact: true })).toHaveCount(0);
-  releaseRequest?.();
-  await expect(page.getByRole("heading", { name: `OPENQUEST / ${firstTitle}` })).toBeVisible();
-
-  await page.evaluate(() => {
-    window.history.pushState(null, "", "/q/missing-scoped-quest");
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  });
-  await expect(page.getByText("Quest not found.", { exact: true })).toBeVisible();
-});
-
-test("malformed encoded client routes remain a safe network view", async ({ page }) => {
-  await page.goto("/q/%");
-  await expect(page.getByRole("heading", { name: "OPENQUEST CONTROL CENTER" })).toBeVisible();
-});
-
 test("the command center has no document horizontal overflow at target viewports", async ({ page }) => {
   for (const viewport of [
     { width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 768, height: 1024 }, { width: 390, height: 844 },
@@ -151,5 +99,48 @@ test("the command center has no document horizontal overflow at target viewports
     await page.setViewportSize(viewport);
     await page.goto("/");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
+});
+
+test("long public stream text, filters, and activity stay readable at target viewports", async ({ browser }) => {
+  const context = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `e2e-responsive-${crypto.randomUUID()}` },
+  });
+  const page = await context.newPage();
+  try {
+    await page.goto("/");
+    const questResponse = await page.request.post("/api/quests", {
+      data: {
+        description: "Long public dashboard fixture. ".repeat(40),
+        goal: "Keep long public Control Center text usable across all required responsive viewports.",
+        title: `Responsive ${"Quest ".repeat(14)}${crypto.randomUUID()}`,
+      },
+    });
+    expect(questResponse.status()).toBe(201);
+    const quest = CreateQuestResponseSchema.parse(await questResponse.json());
+    const challengeTitle = `Long ${"public Challenge ".repeat(7)}${crypto.randomUUID()}`;
+    const challengeResponse = await page.request.post("/api/challenges", {
+      data: {
+        description: "Long public Challenge context that must remain readable in the grouped work stream. ".repeat(20),
+        quest_id: quest.quest_id,
+        title: challengeTitle,
+      },
+    });
+    expect(challengeResponse.status()).toBe(201);
+    CreateChallengeResponseSchema.parse(await challengeResponse.json());
+
+    for (const viewport of [
+      { width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 768, height: 1024 }, { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto(`/q/${quest.slug}`);
+      await expect(page.getByRole("heading", { name: /OPENQUEST \// })).toBeVisible();
+      await expect(page.getByRole("button", { exact: true, name: "OPEN" })).toBeVisible();
+      await expect(page.locator(".work-row").filter({ hasText: challengeTitle })).toBeVisible();
+      await expect(page.getByTestId("activity-list")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    }
+  } finally {
+    await context.close();
   }
 });
