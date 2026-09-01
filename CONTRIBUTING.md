@@ -23,6 +23,9 @@ copyright-assignment agreement.
 
 Before opening a pull request, run:
 
+`bun install --frozen-lockfile` requires GitHub SSH credentials with access to the private
+`teobucos/oxspark` repository; an active `ssh-agent` with an authorized key is acceptable.
+
 ```bash
 bun install --frozen-lockfile
 rm -rf .wrangler/state .runtime/state

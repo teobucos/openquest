@@ -37,6 +37,9 @@ slugs are navigation identifiers and are not accepted as `quest_id` values.
 
 Requires Bun 1.4 or later.
 
+`bun install --frozen-lockfile` requires GitHub SSH credentials with access to the private
+`teobucos/oxspark` repository; an active `ssh-agent` with an authorized key is acceptable.
+
 ```bash
 bun install --frozen-lockfile
 rm -rf .wrangler/state

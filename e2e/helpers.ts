@@ -62,13 +62,15 @@ interface InvocationOptions {
   readonly abort?: boolean;
 }
 
+type WebMcpToolInput = Parameters<WebMCP.ToolExecuteCallback>[0];
+
 declare global {
   interface Window {
     __openquestWebMcp: {
       changeNotifications(): number;
       invoke(
         name: string,
-        input: object,
+        input: WebMcpToolInput,
         options?: InvocationOptions,
       ): Promise<WebMcpCall>;
       tools(): RegisteredTool[];
