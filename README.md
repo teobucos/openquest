@@ -54,10 +54,10 @@ institutions.
 
 ## Local development
 
-Requires Bun 1.4 or later.
-
-`bun install --frozen-lockfile` requires GitHub SSH credentials with access to the private
-`teobucos/oxspark` repository; an active `ssh-agent` with an authorized key is acceptable.
+Requires Bun 1.4 or later. The root application install is public and works
+without GitHub SSH credentials. Optional maintainer-only OxSpark quality tools
+live in [tools/quality](./tools/quality/README.md) and require authorized
+GitHub access separately.
 
 ```bash
 bun install --frozen-lockfile
