@@ -94,7 +94,9 @@ INSERT OR IGNORE INTO challenges (id, quest_id, title, description, created_by_s
 
 -- Ten pending Contributions, one per Challenge, create the review portion of
 -- the public work stream. Their content is deliberately synthetic.
-INSERT OR IGNORE INTO contributions (id, challenge_id, session_id, summary, content, evidence_json, created_at) VALUES
+WITH pending_contributions (
+  id, challenge_id, session_id, summary, content, evidence_json, created_at
+) AS (VALUES
   ('demo_contribution_pending_01', 'demo_challenge_tide_01', 'demo_session_07', 'Synthetic comparison ready for public Review.', 'This synthetic Contribution compares two fictional tide-note formats and keeps all uncertainty visible.', '[{"title":"Synthetic tide-note reference","url":"https://example.com/demo/tide-notes"}]', '2026-07-10T09:00:00.000Z'),
   ('demo_contribution_pending_02', 'demo_challenge_tide_02', 'demo_session_08', 'Synthetic access observation ready for Review.', 'This synthetic Contribution records a fictional shoreline access observation without making real-world claims.', '[{"title":"Synthetic access reference","url":"https://example.com/demo/access"}]', '2026-07-10T09:01:00.000Z'),
   ('demo_contribution_pending_03', 'demo_challenge_signal_01', 'demo_session_09', 'Synthetic signal relay note ready for Review.', 'This synthetic Contribution documents a fictional signal relay and its bounded public questions.', '[{"title":"Synthetic relay reference","url":"https://example.com/demo/relay"}]', '2026-07-10T09:02:00.000Z'),
@@ -104,11 +106,20 @@ INSERT OR IGNORE INTO contributions (id, challenge_id, session_id, summary, cont
   ('demo_contribution_pending_07', 'demo_challenge_archive_01', 'demo_session_01', 'Synthetic memory prompt ready for Review.', 'This synthetic Contribution frames a fictional public-memory prompt without requesting private information.', '[{"title":"Synthetic archive reference","url":"https://example.com/demo/archive"}]', '2026-07-10T09:06:00.000Z'),
   ('demo_contribution_pending_08', 'demo_challenge_food_01', 'demo_session_02', 'Synthetic pantry map ready for Review.', 'This synthetic Contribution maps a fictional shared pantry question with clear public boundaries.', '[{"title":"Synthetic pantry reference","url":"https://example.com/demo/pantry"}]', '2026-07-10T09:07:00.000Z'),
   ('demo_contribution_pending_09', 'demo_challenge_water_01', 'demo_session_03', 'Synthetic water-window comparison ready for Review.', 'This synthetic Contribution compares fictional water-window notes and preserves unresolved context.', '[{"title":"Synthetic water reference","url":"https://example.com/demo/water"}]', '2026-07-10T09:08:00.000Z'),
-  ('demo_contribution_pending_10', 'demo_challenge_tools_01', 'demo_session_04', 'Synthetic repair-gap note ready for Review.', 'This synthetic Contribution records a fictional repair-knowledge gap for public review.', '[{"title":"Synthetic repair reference","url":"https://example.com/demo/repair"}]', '2026-07-10T09:09:00.000Z');
+  ('demo_contribution_pending_10', 'demo_challenge_tools_01', 'demo_session_04', 'Synthetic repair-gap note ready for Review.', 'This synthetic Contribution records a fictional repair-knowledge gap for public review.', '[{"title":"Synthetic repair reference","url":"https://example.com/demo/repair"}]', '2026-07-10T09:09:00.000Z')
+)
+INSERT INTO contributions (id, challenge_id, session_id, summary, content, evidence_json, created_at)
+SELECT id, challenge_id, session_id, summary, content, evidence_json, created_at
+FROM pending_contributions
+WHERE NOT EXISTS (
+  SELECT 1 FROM contributions WHERE id = 'demo_contribution_pending_01'
+);
 
 -- Seventeen accepted Contributions become presentation-only Results when their
 -- Challenges resolve. Three challenged Contributions preserve reopened history.
-INSERT OR IGNORE INTO contributions (id, challenge_id, session_id, summary, content, evidence_json, created_at) VALUES
+WITH settled_contributions (
+  id, challenge_id, session_id, summary, content, evidence_json, created_at
+) AS (VALUES
   ('demo_contribution_result_01', 'demo_challenge_tide_03', 'demo_session_07', 'Synthetic tide glossary accepted as a Result.', 'A synthetic public glossary with explicit uncertainty labels.', '[{"title":"Synthetic glossary reference","url":"https://example.com/demo/glossary"}]', '2026-07-11T09:00:00.000Z'),
   ('demo_contribution_result_02', 'demo_challenge_tide_04', 'demo_session_08', 'Synthetic cadence review accepted as a Result.', 'A synthetic cadence review with one transparent improvement.', '[{"title":"Synthetic cadence reference","url":"https://example.com/demo/cadence"}]', '2026-07-11T09:01:00.000Z'),
   ('demo_contribution_result_03', 'demo_challenge_tide_05', 'demo_session_09', 'Synthetic tide-note glossary accepted as a Result.', 'A synthetic public tide-note glossary with bounded terms.', '[{"title":"Synthetic glossary reference","url":"https://example.com/demo/tide-glossary"}]', '2026-07-11T09:02:00.000Z'),
@@ -128,9 +139,18 @@ INSERT OR IGNORE INTO contributions (id, challenge_id, session_id, summary, cont
   ('demo_contribution_result_17', 'demo_challenge_tools_03', 'demo_session_11', 'Synthetic maintenance review accepted as a Result.', 'A synthetic maintenance-note review with clear public limits.', '[{"title":"Synthetic maintenance reference","url":"https://example.com/demo/maintenance"}]', '2026-07-11T09:16:00.000Z'),
   ('demo_contribution_reopened_01', 'demo_challenge_tide_06', 'demo_session_12', 'Synthetic warning-sign comparison challenged for revision.', 'A synthetic warning-sign comparison intentionally retained as challenged public history.', '[{"title":"Synthetic warning reference","url":"https://example.com/demo/warning"}]', '2026-07-12T09:00:00.000Z'),
   ('demo_contribution_reopened_02', 'demo_challenge_steps_04', 'demo_session_01', 'Synthetic route note challenged for revision.', 'A synthetic route-note review intentionally retained as challenged public history.', '[{"title":"Synthetic route reference","url":"https://example.com/demo/route"}]', '2026-07-12T09:01:00.000Z'),
-  ('demo_contribution_reopened_03', 'demo_challenge_air_04', 'demo_session_02', 'Synthetic sampling route challenged for revision.', 'A synthetic sampling-route note intentionally retained as challenged public history.', '[{"title":"Synthetic sampling reference","url":"https://example.com/demo/sampling"}]', '2026-07-12T09:02:00.000Z');
+  ('demo_contribution_reopened_03', 'demo_challenge_air_04', 'demo_session_02', 'Synthetic sampling route challenged for revision.', 'A synthetic sampling-route note intentionally retained as challenged public history.', '[{"title":"Synthetic sampling reference","url":"https://example.com/demo/sampling"}]', '2026-07-12T09:02:00.000Z')
+)
+INSERT INTO contributions (id, challenge_id, session_id, summary, content, evidence_json, created_at)
+SELECT id, challenge_id, session_id, summary, content, evidence_json, created_at
+FROM settled_contributions
+WHERE NOT EXISTS (
+  SELECT 1 FROM contributions WHERE id = 'demo_contribution_result_01'
+);
 
-INSERT OR IGNORE INTO reviews (id, contribution_id, reviewer_session_id, verdict, reason, evidence_json, created_at) VALUES
+WITH demo_reviews (
+  id, contribution_id, reviewer_session_id, verdict, reason, evidence_json, created_at
+) AS (VALUES
   ('demo_review_support_01', 'demo_contribution_result_01', 'demo_session_01', 'support', 'The synthetic glossary is clear, bounded, and preserves uncertainty.', '[{"title":"Synthetic review reference","url":"https://example.com/demo/review-01"}]', '2026-07-13T09:00:00.000Z'),
   ('demo_review_support_02', 'demo_contribution_result_02', 'demo_session_02', 'support', 'The synthetic cadence review is clear and the suggested improvement is public.', '[{"title":"Synthetic review reference","url":"https://example.com/demo/review-02"}]', '2026-07-13T09:01:00.000Z'),
   ('demo_review_support_03', 'demo_contribution_result_03', 'demo_session_03', 'support', 'The synthetic glossary is concise and appropriately qualified.', '[{"title":"Synthetic review reference","url":"https://example.com/demo/review-03"}]', '2026-07-13T09:02:00.000Z'),
@@ -150,4 +170,11 @@ INSERT OR IGNORE INTO reviews (id, contribution_id, reviewer_session_id, verdict
   ('demo_review_support_17', 'demo_contribution_result_17', 'demo_session_05', 'support', 'The maintenance review gives an appropriately bounded public result.', '[{"title":"Synthetic review reference","url":"https://example.com/demo/review-17"}]', '2026-07-13T09:16:00.000Z'),
   ('demo_review_challenge_01', 'demo_contribution_reopened_01', 'demo_session_06', 'challenge', 'The fictional warning-sign comparison needs clearer source separation.', '[{"title":"Synthetic review reference","url":"https://example.com/demo/review-18"}]', '2026-07-13T09:17:00.000Z'),
   ('demo_review_challenge_02', 'demo_contribution_reopened_02', 'demo_session_07', 'challenge', 'The fictional route note needs a more precise uncertainty statement.', '[{"title":"Synthetic review reference","url":"https://example.com/demo/review-19"}]', '2026-07-13T09:18:00.000Z'),
-  ('demo_review_challenge_03', 'demo_contribution_reopened_03', 'demo_session_08', 'challenge', 'The fictional sampling route needs clearer provenance.', '[{"title":"Synthetic review reference","url":"https://example.com/demo/review-20"}]', '2026-07-13T09:19:00.000Z');
+  ('demo_review_challenge_03', 'demo_contribution_reopened_03', 'demo_session_08', 'challenge', 'The fictional sampling route needs clearer provenance.', '[{"title":"Synthetic review reference","url":"https://example.com/demo/review-20"}]', '2026-07-13T09:19:00.000Z')
+)
+INSERT INTO reviews (id, contribution_id, reviewer_session_id, verdict, reason, evidence_json, created_at)
+SELECT id, contribution_id, reviewer_session_id, verdict, reason, evidence_json, created_at
+FROM demo_reviews
+WHERE NOT EXISTS (
+  SELECT 1 FROM reviews WHERE id = 'demo_review_support_01'
+);

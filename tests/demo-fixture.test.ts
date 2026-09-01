@@ -3,7 +3,6 @@ import { Database } from "bun:sqlite";
 
 const expectedState = await Bun.file("demo/expected-state.json").json();
 const seed = await Bun.file("demo/seed.sql").text();
-const verification = await Bun.file("demo/verify.sql").text();
 const initialMigration = await Bun.file("migrations/0001_initial.sql").text();
 const queueIndexMigration = await Bun.file("migrations/0002_challenges_by_status_created_id.sql").text();
 
@@ -49,12 +48,6 @@ test("the demo fixture declares and verifies its bounded organization and work-s
   expect(seed).toContain("demo_review_challenge_03");
   expect(seed).not.toContain("verified institute");
 
-  expect(verification).toContain("CREATE TEMP TABLE demo_seed_assertions");
-  expect(verification).toContain("status = 'awaiting_review'");
-  expect(verification).toContain("status = 'open'");
-  expect(verification).toContain("status = 'resolved'");
-  expect(verification).toContain("verification_status = 'unverified'");
-  expect(verification).toContain("event_type IN");
 });
 
 test("the seed produces the planned D1 work-stream distribution after the organization migration", () => {
@@ -65,8 +58,6 @@ test("the seed produces the planned D1 work-stream distribution after the organi
     database.exec(queueIndexMigration);
     database.exec(organizationMigrationProjection);
     database.exec(seed);
-    database.exec(verification);
-
     expect(
       database
         .query(

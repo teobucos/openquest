@@ -17,7 +17,8 @@ Contributor identities, and a deterministic public history. The resulting work
 stream contains ten items awaiting Review, fifteen open items (including three
 with challenged history), and seventeen resolved items. It produces one
 hundred public domain events. `expected-state.json` records those assertions,
-and `verify.sql` checks them against D1 after seeding.
+and the `demo:verify:*` commands query D1 and fail on any mismatch after
+seeding.
 
 ## Local demo setup
 
