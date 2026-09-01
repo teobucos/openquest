@@ -21,6 +21,8 @@ interface OpenQuestChangedDetail {
   waitUntil(promise: Promise<unknown>): void;
 }
 
+class OpenQuestChangedEvent extends CustomEvent<OpenQuestChangedDetail> {}
+
 export function readableError(cause: unknown): string {
   if (cause instanceof ApiError) return cause.payload.message;
   if (cause instanceof Error) return cause.message;
@@ -34,7 +36,7 @@ export async function notifyOpenQuestChanged(): Promise<void> {
       pending.push(promise);
     },
   };
-  window.dispatchEvent(new CustomEvent(OPENQUEST_CHANGED_EVENT, { detail }));
+  window.dispatchEvent(new OpenQuestChangedEvent(OPENQUEST_CHANGED_EVENT, { detail }));
   await Promise.allSettled(pending);
 }
 
@@ -117,9 +119,8 @@ export function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: 
     const refresh = (event?: Event) => {
       const refreshed = reload();
       refreshed.catch(recordReloadFailure);
-      if (event instanceof CustomEvent) {
-        const detail = event.detail as Partial<OpenQuestChangedDetail> | undefined;
-        detail?.waitUntil?.(refreshed);
+      if (event instanceof OpenQuestChangedEvent) {
+        event.detail.waitUntil(refreshed);
       }
     };
     refresh();

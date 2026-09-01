@@ -94,7 +94,9 @@ export function ControlCenter({
   refreshError: string | null;
   liveStatus?: LiveStatus;
 }) {
-  const scopedQuest = route.scope.kind === "quest" ? data.quests[0] : null;
+  const scopedQuest = route.scope.kind === "quest" && data.quests[0]?.slug === route.scope.slug
+    ? data.quests[0]
+    : null;
   const visibleWork = useMemo(() => route.filter === "all"
     ? data.work_stream
     : data.work_stream.filter((item) => item.stream_state === route.filter), [data.work_stream, route.filter]);

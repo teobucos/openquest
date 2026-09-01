@@ -84,6 +84,7 @@ export function useLiveUpdates({
     const connect = () => {
       if (!active) return;
       setStatus(attempt === 0 ? "connecting" : "reconnecting");
+      startDisconnectedTimers();
       const currentSocket = new WebSocket(socketUrl(scope));
       socket = currentSocket;
       currentSocket.addEventListener("open", () => {

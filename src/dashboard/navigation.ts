@@ -10,16 +10,27 @@ export interface RouteState {
 
 export type RouteNavigationHandler = (next: RouteState) => (event: MouseEvent<HTMLAnchorElement>) => void;
 
-const filters = new Set<WorkFilter>(["all", "review", "open", "resolved"]);
+const filters: readonly WorkFilter[] = ["all", "review", "open", "resolved"];
+const questSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function readQuestSlug(encodedSlug: string): string | null {
+  try {
+    const slug = decodeURIComponent(encodedSlug);
+    return questSlugPattern.test(slug) ? slug : null;
+  } catch {
+    return null;
+  }
+}
 
 export function readRoute(location: Location = window.location): RouteState {
   const match = /^\/q\/([^/]+)$/.exec(location.pathname);
   const query = new URLSearchParams(location.search);
   const candidate = query.get("status");
-  const filter = candidate && filters.has(candidate as WorkFilter) ? candidate as WorkFilter : "all";
+  const filter = filters.find((value) => value === candidate) ?? "all";
   const challengeId = query.get("challenge")?.trim() || null;
+  const slug = match ? readQuestSlug(match[1]) : null;
   return {
-    scope: match ? { kind: "quest", slug: decodeURIComponent(match[1]) } : { kind: "network" },
+    scope: slug ? { kind: "quest", slug } : { kind: "network" },
     filter,
     challengeId,
   };

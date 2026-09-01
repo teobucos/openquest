@@ -34,6 +34,12 @@ export default function App() {
     lastSequence: data?.freshness.last_sequence ?? 0,
     scope: liveScope,
   });
+  const unresolvedScope = route.scope.kind === "quest" && !scopedQuest;
+  if (unresolvedScope) {
+    const scopeError = refreshError ?? error;
+    if (scopeError) return <ErrorPanel message={scopeError} retry={reload} />;
+    return <Loading />;
+  }
   if (error && !data) return <ErrorPanel message={error} retry={reload} />;
   if (loading && !data) return <Loading />;
   if (!data) return <Loading />;

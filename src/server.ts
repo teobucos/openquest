@@ -31,7 +31,7 @@ import {
   submitContribution,
 } from "./store";
 import { broadcastLiveInvalidation, upgradeLiveSocket, type LiveHubEnvironment } from "./liveHub";
-import { notifyCommittedMutation } from "./liveTransport";
+import { queueCommittedMutation } from "./liveTransport";
 
 export { LiveHub } from "./liveHub";
 
@@ -102,20 +102,29 @@ async function writeIdentity(request: Request, env: Env) {
   return identity;
 }
 
-async function notifyMutation(
+function notifyMutation(
   env: Env,
   questId: string | null | Promise<string | null>,
-): Promise<void> {
-  await notifyCommittedMutation({
+  context?: ExecutionContext,
+): void {
+  queueCommittedMutation({
     latestEventSequence: (resolvedQuestId) => latestEventSequence(env.DB, resolvedQuestId),
     publish: (resolvedQuestId, latestSequence) => (
       broadcastLiveInvalidation(env, resolvedQuestId, latestSequence)
     ),
     resolveQuestId: () => Promise.resolve(questId),
-  });
+  }, context);
 }
 
-async function handleApi(request: Request, env: Env): Promise<Response> {
+function decodePathIdentifier(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    fail(400, "invalid_input", "Path identifier must use valid percent encoding.");
+  }
+}
+
+async function handleApi(request: Request, env: Env, context?: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === "/api/live") {
     return upgradeLiveSocket(request, env);
@@ -132,17 +141,17 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 
   const questMatch = /^\/api\/quests\/([^/]+)$/.exec(url.pathname);
   if (request.method === "GET" && questMatch) {
-    return json(await getQuest(env.DB, decodeURIComponent(questMatch[1])));
+    return json(await getQuest(env.DB, decodePathIdentifier(questMatch[1])));
   }
 
   const contributionMatch = /^\/api\/contributions\/([^/]+)$/.exec(url.pathname);
   if (request.method === "GET" && contributionMatch) {
-    return json(await getContribution(env.DB, decodeURIComponent(contributionMatch[1])));
+    return json(await getContribution(env.DB, decodePathIdentifier(contributionMatch[1])));
   }
 
   const challengeMatch = /^\/api\/challenges\/([^/]+)$/.exec(url.pathname);
   if (request.method === "GET" && challengeMatch) {
-    return json(await getChallenge(env.DB, decodeURIComponent(challengeMatch[1])));
+    return json(await getChallenge(env.DB, decodePathIdentifier(challengeMatch[1])));
   }
 
   if (request.method === "POST" && url.pathname === "/api/work/next") {
@@ -154,7 +163,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     const input = await parseBody(request, CreateQuestInputSchema);
     const identity = await writeIdentity(request, env);
     const result = await createQuest(env.DB, identity.actor, input);
-    await notifyMutation(env, result.quest_id);
+    notifyMutation(env, result.quest_id, context);
     return json(result, 201, identity.setCookie);
   }
 
@@ -162,7 +171,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     const input = await parseBody(request, CreateChallengeInputSchema);
     const identity = await writeIdentity(request, env);
     const result = await createChallenge(env.DB, identity.actor, input);
-    await notifyMutation(env, result.quest_id);
+    notifyMutation(env, result.quest_id, context);
     return json(result, 201, identity.setCookie);
   }
 
@@ -170,7 +179,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     const input = await parseBody(request, SubmitContributionInputSchema);
     const identity = await writeIdentity(request, env);
     const result = await submitContribution(env.DB, identity.actor, input);
-    await notifyMutation(env, resolveQuestIdForChallenge(env.DB, input.challenge_id));
+    notifyMutation(env, resolveQuestIdForChallenge(env.DB, input.challenge_id), context);
     return json(result, 201, identity.setCookie);
   }
 
@@ -178,7 +187,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     const input = await parseBody(request, ReviewContributionInputSchema);
     const identity = await writeIdentity(request, env);
     const result = await reviewContribution(env.DB, identity.actor, input);
-    await notifyMutation(env, resolveQuestIdForContribution(env.DB, input.contribution_id));
+    notifyMutation(env, resolveQuestIdForContribution(env.DB, input.contribution_id), context);
     return json(result, 201, identity.setCookie);
   }
 
@@ -188,9 +197,10 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 export async function handleRequest(
   request: Request,
   env: Env,
+  context?: ExecutionContext,
 ): Promise<Response> {
   try {
-    return await handleApi(request, env);
+    return await handleApi(request, env, context);
   } catch (cause) {
     if (cause instanceof HttpError || cause instanceof StoreError) {
       return json(cause.payload, cause.httpStatus);
@@ -204,7 +214,7 @@ export async function handleRequest(
 }
 
 export default {
-  fetch(request, env) {
-    return handleRequest(request, env);
+  fetch(request, env, context) {
+    return handleRequest(request, env, context);
   },
 } satisfies ExportedHandler<Env>;

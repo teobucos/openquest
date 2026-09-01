@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { CreateQuestResponseSchema } from "../src/contracts";
 import { installFakeWebMcp, registeredTools } from "./helpers";
 
 test("the control center navigates scopes, filters, and inspectors without a document reload", async ({ page }) => {
@@ -89,6 +90,58 @@ test("a human-created Quest keeps the same document and the five registered tool
   } finally {
     await context.close();
   }
+});
+
+test("scoped navigation never renders a prior Quest while loading or after a failure", async ({ page }) => {
+  await page.goto("/");
+  async function createQuest(title: string) {
+    const response = await page.request.post("/api/quests", {
+      data: {
+        description: "A route-state fixture that ensures scoped navigation never attributes stale public data to another Quest.",
+        goal: "Verify loading and failure states never render the previous Quest as the current scope.",
+        title,
+      },
+    });
+    expect(response.status()).toBe(201);
+    return CreateQuestResponseSchema.parse(await response.json());
+  }
+
+  const firstTitle = `First scoped route ${crypto.randomUUID()}`;
+  const secondTitle = `Second scoped route ${crypto.randomUUID()}`;
+  const first = await createQuest(firstTitle);
+  const second = await createQuest(secondTitle);
+  await page.reload();
+  await expect(page.getByText(firstTitle, { exact: true })).toBeVisible();
+
+  let releaseRequest: (() => void) | undefined;
+  const heldRequest = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+  await page.route("**/api/world?*", async (route) => {
+    const requestUrl = new URL(route.request().url());
+    if (requestUrl.searchParams.get("quest_slug") === first.slug) {
+      await heldRequest;
+    }
+    await route.continue();
+  });
+
+  await page.locator(".quest-row").filter({ hasText: firstTitle }).click();
+  await expect(page).toHaveURL(new RegExp(`/q/${first.slug}$`));
+  await expect(page.getByText("Loading public state…", { exact: true })).toBeVisible();
+  await expect(page.getByText(secondTitle, { exact: true })).toHaveCount(0);
+  releaseRequest?.();
+  await expect(page.getByRole("heading", { name: `OPENQUEST / ${firstTitle}` })).toBeVisible();
+
+  await page.evaluate(() => {
+    window.history.pushState(null, "", "/q/missing-scoped-quest");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page.getByText("Quest not found.", { exact: true })).toBeVisible();
+});
+
+test("malformed encoded client routes remain a safe network view", async ({ page }) => {
+  await page.goto("/q/%");
+  await expect(page.getByRole("heading", { name: "OPENQUEST CONTROL CENTER" })).toBeVisible();
 });
 
 test("the command center has no document horizontal overflow at target viewports", async ({ page }) => {

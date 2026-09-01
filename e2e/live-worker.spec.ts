@@ -185,6 +185,8 @@ test("the live hook degrades, falls back, reconnects, and ignores a prior scope 
   await page.goto("/e2e/live-client.html");
   expect(await page.evaluate(() => window.WebSocket.name)).toBe("FakeWebSocket");
   await expect.poll(() => page.evaluate(() => window.__openquestFakeLiveSockets?.length ?? 0)).toBe(1);
+  await expect.poll(async () => (await liveClientState(page))?.status, { timeout: 7_000 }).toBe("degraded");
+  await expect.poll(async () => (await liveClientState(page))?.refreshes ?? 0).toBeGreaterThan(0);
   await page.evaluate(() => window.__openquestFakeLiveSockets?.[0]?.emitOpen());
   await waitForLive(page);
 

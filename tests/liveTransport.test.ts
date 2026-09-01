@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { broadcastLiveInvalidation, notifyCommittedMutation } from "../src/liveTransport";
+import {
+  broadcastLiveInvalidation,
+  notifyCommittedMutation,
+  queueCommittedMutation,
+} from "../src/liveTransport";
 
 interface LoggedError {
   details: unknown;
@@ -96,5 +100,20 @@ describe("OpenQuest live transport delivery", () => {
     expect(calls).toEqual(["resolve", "sequence:quest_9", "publish:quest_9:91"]);
     expect(errors).toHaveLength(1);
     expect(errors[0]?.message).toBe("OpenQuest live transport publish failed");
+  });
+
+  it("queues a stalled post-commit notification without blocking the write path", () => {
+    const queued: Promise<void>[] = [];
+    queueCommittedMutation({
+      latestEventSequence: () => new Promise<number>(() => {}),
+      publish: async () => {},
+      resolveQuestId: async () => "quest_stalled",
+    }, {
+      waitUntil(promise) {
+        queued.push(promise);
+      },
+    });
+
+    expect(queued).toHaveLength(1);
   });
 });

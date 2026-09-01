@@ -125,6 +125,17 @@ test("OpenQuest keeps public reads inert and returns invalid tool input as struc
     expect(response.headers()["set-cookie"]).toBeUndefined();
   }
 
+  const malformedIdentifierReads = await Promise.all([
+    request.get("/api/challenges/%"),
+    request.get("/api/quests/%"),
+    request.get("/api/contributions/%"),
+  ]);
+  for (const response of malformedIdentifierReads) {
+    expect(response.status()).toBe(400);
+    expect(ApiErrorResponseSchema.parse(await response.json()).status).toBe("invalid_input");
+    expect(response.headers()["set-cookie"]).toBeUndefined();
+  }
+
   const session = await browser.newContext({
     extraHTTPHeaders: { "cf-connecting-ip": `e2e-safety-${crypto.randomUUID()}` },
   });

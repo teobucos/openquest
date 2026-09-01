@@ -49,9 +49,9 @@ test("hot public projection queries use their dedicated indexes", () => {
     );
     expect(contributorPlan).toContain("events_by_contributor_recency");
 
-    // The remaining ranked outer sort is over at most 20 contributor rows.
-    // Other public lists are likewise bounded (10/20/30) or use primary-key
-    // lookups, so extra write-time indexes would not improve their hot path.
+    // The final sort ranks one latest event per contributor before applying its
+    // 20-row response bound. It necessarily scales with distinct contributors;
+    // the partial index still avoids scanning non-contributor event types.
     expect(contributorPlan.match(/USE TEMP B-TREE FOR ORDER BY/g)).toHaveLength(1);
   } finally {
     db.close();

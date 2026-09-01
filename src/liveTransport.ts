@@ -18,6 +18,10 @@ export type LiveInvalidationPublisher = (
   latestSequence: number,
 ) => Promise<void>;
 
+export interface BackgroundTaskContext {
+  waitUntil(promise: Promise<void>): void;
+}
+
 interface CommittedMutationNotification {
   latestEventSequence(questId: string): Promise<number>;
   publish: LiveInvalidationPublisher;
@@ -74,5 +78,16 @@ export async function notifyCommittedMutation(
     await notification.publish(questId, latestSequence);
   } catch (cause) {
     logger.error("OpenQuest live transport publish failed", cause);
+  }
+}
+
+export function queueCommittedMutation(
+  notification: CommittedMutationNotification,
+  context: BackgroundTaskContext | undefined,
+  logger: LiveTransportLogger = console,
+): void {
+  const notificationTask = notifyCommittedMutation(notification, logger);
+  if (context) {
+    context.waitUntil(notificationTask);
   }
 }
