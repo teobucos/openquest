@@ -31,6 +31,7 @@ import {
   submitContribution,
 } from "./store";
 import { broadcastLiveInvalidation, upgradeLiveSocket, type LiveHubEnvironment } from "./liveHub";
+import { notifyCommittedMutation } from "./liveTransport";
 
 export { LiveHub } from "./liveHub";
 
@@ -105,17 +106,13 @@ async function notifyMutation(
   env: Env,
   questId: string | null | Promise<string | null>,
 ): Promise<void> {
-  try {
-    const resolvedQuestId = await questId;
-    if (!resolvedQuestId) {
-      console.error("OpenQuest live transport could not resolve the affected Quest.");
-      return;
-    }
-    const latestSequence = await latestEventSequence(env.DB, resolvedQuestId);
-    await broadcastLiveInvalidation(env, resolvedQuestId, latestSequence);
-  } catch (cause) {
-    console.error("OpenQuest live transport publish failed", cause);
-  }
+  await notifyCommittedMutation({
+    latestEventSequence: (resolvedQuestId) => latestEventSequence(env.DB, resolvedQuestId),
+    publish: (resolvedQuestId, latestSequence) => (
+      broadcastLiveInvalidation(env, resolvedQuestId, latestSequence)
+    ),
+    resolveQuestId: () => Promise.resolve(questId),
+  });
 }
 
 async function handleApi(request: Request, env: Env): Promise<Response> {

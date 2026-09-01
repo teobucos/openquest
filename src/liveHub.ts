@@ -4,6 +4,7 @@ import {
   parseLiveQuestId,
   serializeLiveInvalidation,
 } from "./liveProtocol";
+import { broadcastLiveInvalidation as broadcastInvalidation } from "./liveTransport";
 import { DurableObject } from "cloudflare:workers";
 
 export interface LiveHubEnvironment {
@@ -18,39 +19,12 @@ function invalidLiveRequest(message: string, status = 400): Response {
   return new Response(message, { status });
 }
 
-async function notifyHub(
-  namespace: DurableObjectNamespace,
-  name: string,
-  latestSequence: number,
-): Promise<void> {
-  const hub = namespace.get(namespace.idFromName(name));
-  const response = await hub.fetch("https://openquest-live-hub.invalid/broadcast", {
-    body: serializeLiveInvalidation(latestSequence),
-    headers: { "content-type": "application/json" },
-    method: "POST",
-  });
-  if (!response.ok) {
-    throw new Error(`Live hub ${name} rejected invalidation with HTTP ${response.status}.`);
-  }
-}
-
 export async function broadcastLiveInvalidation(
   env: LiveHubEnvironment,
   questId: string,
   latestSequence: number,
 ): Promise<void> {
-  const names = [liveHubName(), liveHubName(questId)];
-  const outcomes = await Promise.allSettled(
-    names.map((name) => notifyHub(env.LIVE_HUB, name, latestSequence)),
-  );
-  for (const [index, outcome] of outcomes.entries()) {
-    if (outcome.status === "rejected") {
-      console.error("OpenQuest live transport notification failed", {
-        hub: names[index],
-        reason: outcome.reason,
-      });
-    }
-  }
+  await broadcastInvalidation(env.LIVE_HUB, questId, latestSequence);
 }
 
 export async function upgradeLiveSocket(

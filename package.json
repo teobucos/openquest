@@ -17,6 +17,7 @@
     "test": "bun test tests",
     "test:watch": "bun test --watch tests",
     "e2e": "bun run --bun playwright test",
+    "e2e:live": "bun run --bun playwright test --config playwright.live.config.ts",
     "e2e:ui": "bun run --bun playwright test --ui",
     "lint:oxlint": "oxlint --deny-warnings .",
     "doctor": "react-doctor --yes --no-telemetry --verbose",
