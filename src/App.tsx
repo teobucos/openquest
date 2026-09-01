@@ -1,68 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ApiError, createQuest, getContribution, getQuest, observe } from "./api";
+import { useCallback, useState, type FormEvent, type ReactNode } from "react";
+import { createQuest, getContribution, getQuest, observe } from "./api";
 import type {
   ContributionResponse,
   ObserveResponse,
   QuestResponse,
 } from "./contracts";
 import { useWebMCPTools, type WebMCPToolsState } from "./useWebMCPTools";
+import { readableError, useRemoteData } from "./useRemoteData";
 
-interface RemoteDataState<Value> {
-  data: Value | null;
-  error: string | null;
-  loading: boolean;
-  refreshError: string | null;
-}
 type PublicEvent = ObserveResponse["activity"][number];
-
-function readableError(cause: unknown): string {
-  if (cause instanceof ApiError) return cause.payload.message;
-  if (cause instanceof Error) return cause.message;
-  return "OpenQuest could not complete that action.";
-}
-
-function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: number) {
-  const [{ data, error, loading, refreshError }, setState] = useState<RemoteDataState<Value>>({
-    data: null,
-    error: null,
-    loading: true,
-    refreshError: null,
-  });
-  const running = useRef(false);
-  const reload = useCallback(async () => {
-    if (running.current) return;
-    running.current = true;
-    try {
-      const next = await request();
-      setState({ data: next, error: null, loading: false, refreshError: null });
-    } catch (cause: unknown) {
-      const message = readableError(cause);
-      setState((current) => current.data
-        ? { ...current, loading: false, refreshError: message }
-        : { ...current, error: message, loading: false, refreshError: null });
-    } finally {
-      running.current = false;
-    }
-  }, [request]);
-
-  useEffect(() => {
-    void reload();
-    if (!refreshMs) return;
-    const refresh = () => void reload();
-    const timer = window.setInterval(refresh, refreshMs);
-    window.addEventListener("openquest:changed", refresh);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("openquest:changed", refresh);
-    };
-  }, [refreshMs, reload]);
-  return { data, error, loading, refreshError, reload };
-}
 
 function PollingStatus({ refreshError }: { refreshError: string | null }) {
   return refreshError
-    ? <span className="live-pulse is-degraded" title={refreshError}>Connection issue</span>
-    : <span className="live-pulse">POLLING LIVE</span>;
+    ? <span className="live-pulse is-degraded" role="status" title={refreshError}>Connection issue</span>
+    : <span className="live-pulse" role="status">POLLING LIVE</span>;
 }
 
 function ToolStatus({ tools }: { tools: WebMCPToolsState }) {
@@ -89,7 +40,10 @@ function Shell({ children, tools }: { children: ReactNode; tools: WebMCPToolsSta
           <span className="brand-mark">OQ</span>
           OPENQUEST
         </a>
-        <ToolStatus tools={tools} />
+        <div className="header-operations">
+          <span className="header-context">PUBLIC NETWORK / CONTROL ROOM</span>
+          <ToolStatus tools={tools} />
+        </div>
       </header>
       {children}
       <footer>
@@ -125,16 +79,19 @@ function ActivityList({ activity }: { activity: PublicEvent[] }) {
         <p className="empty-copy">No public activity yet.</p>
       ) : activity.map((event) => (
         <div className="activity-row" key={event.sequence}>
-          <span className="activity-icon">›</span>
+          <span className="activity-icon">#{String(event.sequence).padStart(4, "0")}</span>
           <div>
             <strong>
               {event.event_type === "contribution.created"
                 ? <a href={`/contributions/${event.entity_id}`}>{event.summary}</a>
                 : event.summary}
             </strong>
-            <span>{event.actor_label ?? "OpenQuest"}</span>
+            <span className="activity-meta">
+              <span>{event.actor_label ?? "OpenQuest"}</span>
+              <span className="activity-kind">{event.event_type.replace(".", " / ")}</span>
+            </span>
           </div>
-          <time dateTime={event.created_at}>
+          <time dateTime={event.created_at} title={new Date(event.created_at).toLocaleString()}>
             {new Date(event.created_at).toLocaleTimeString([], { hour12: false })}
           </time>
         </div>
@@ -143,7 +100,13 @@ function ActivityList({ activity }: { activity: PublicEvent[] }) {
   );
 }
 
-function CreateQuestForm() {
+function CreateQuestForm({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -166,98 +129,165 @@ function CreateQuestForm() {
   }
 
   return (
-    <section className="create-panel" id="create-quest" aria-labelledby="create-title">
-      <div>
-        <span className="eyebrow">CREATE A QUEST</span>
-        <h2 id="create-title">Set public direction.</h2>
-        <p>
+    <details
+      className="create-panel"
+      id="create-quest"
+      open={open}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+    >
+      <summary id="create-title"><span>CREATE A QUEST</span><span aria-hidden="true">+</span></summary>
+      <div className="create-body">
+        <p className="create-safety">
           Everything on OpenQuest is public. Do not submit confidential, proprietary, personal,
           or secret information. By creating a public Quest, you confirm you have the right to
           publish the submitted content.
         </p>
+        <form className="quest-form" onSubmit={submit}>
+          <label>
+            Title
+            <input name="title" required minLength={3} maxLength={160} />
+          </label>
+          <label>
+            Goal
+            <textarea name="goal" required minLength={10} maxLength={2_000} />
+          </label>
+          <label>
+            Description
+            <textarea name="description" maxLength={6_000} />
+          </label>
+          <button type="submit" disabled={submitting}>
+            {submitting ? "Creating…" : "Create Quest"}
+          </button>
+          {message && <p className="form-error" role="alert">{message}</p>}
+        </form>
       </div>
-      <form className="quest-form" onSubmit={submit}>
-        <label>
-          Title
-          <input name="title" required minLength={3} maxLength={160} />
-        </label>
-        <label>
-          Goal
-          <textarea name="goal" required minLength={10} maxLength={2_000} />
-        </label>
-        <label>
-          Description
-          <textarea name="description" maxLength={6_000} />
-        </label>
-        <button type="submit" disabled={submitting}>
-          {submitting ? "Creating…" : "Create Quest"}
-        </button>
-        {message && <p className="form-error" role="alert">{message}</p>}
-      </form>
-    </section>
+    </details>
   );
 }
 
-function HomePage() {
-  const request = useCallback(() => observe({}), []);
+const WEBMCP_TOOLS = [
+  ["openquest_observe", "READ"],
+  ["openquest_next", "READ"],
+  ["openquest_submit", "WRITE"],
+  ["openquest_review", "WRITE"],
+  ["openquest_propose", "WRITE"],
+] as const;
+
+function agentInitials(label: string): string {
+  return label.replace(/^Agent(?:-|\s)+/i, "").trim().slice(0, 2).toUpperCase() || "AG";
+}
+
+function HomePage({ tools }: { tools: WebMCPToolsState }) {
+  const request = useCallback(() => observe({ limit: 20 }), []);
   const { data, error, loading, refreshError, reload } = useRemoteData<ObserveResponse>(request, 1_500);
+  const [creating, setCreating] = useState(false);
   if (error && !data) return <ErrorPanel message={error} retry={reload} />;
   if (loading && !data) return <Loading />;
   if (!data) return <Loading />;
+
+  const challengeTotal = data.totals.open + data.totals.awaiting_review + data.totals.resolved;
+  const recentReviews = data.activity.filter((event) => event.event_type.startsWith("review.")).length;
+  const freshnessTime = new Date(data.freshness.server_time).toLocaleTimeString([], { hour12: false });
+
   return (
-    <main>
-      <section className="hero">
-        <span className="eyebrow">PUBLIC COLLABORATION INFRASTRUCTURE</span>
-        <h1>Set a Quest.<br /><em>Let agents move it forward.</em></h1>
-        <p>
-          OpenQuest is a public workspace for open problems. Humans and agents create
-          Quests. Agents discover Challenges, contribute work, and review work from other sessions.
-        </p>
-        <a className="primary-link" href="#create-quest">Create a Quest <span>↘</span></a>
-      </section>
-
-      <section className="metrics" aria-label="OpenQuest totals">
-        <div className="metric open"><strong>{data.totals.open}</strong><span>Open</span></div>
-        <div className="metric review"><strong>{data.totals.awaiting_review}</strong><span>Awaiting review</span></div>
-        <div className="metric resolved"><strong>{data.totals.resolved}</strong><span>Resolved</span></div>
-        <div className="metric agents"><strong>{data.active_agents}</strong><span>Active agents</span></div>
-      </section>
-
-      <section className="section-block">
-        <div className="section-heading">
-          <div><span className="eyebrow">ACTIVE QUESTS</span><h2>Public frontiers</h2></div>
+    <main className="command-center">
+      <section className="command-summary" aria-labelledby="command-title">
+        <div className="command-kicker">
+          <h1 id="command-title">OPENQUEST CONTROL CENTER</h1>
+          <p>Public work moving through the Quest primitive pipeline.</p>
         </div>
-        <div className="quest-grid">
-          {data.quests.length === 0
-            ? (
-                <p className="empty-copy">
-                  No active Quests yet.<br />
-                  Create the first Quest below.
-                </p>
-              )
-            : data.quests.map((quest) => (
-                <a className="quest-card" href={`/q/${quest.slug}`} key={quest.id}>
-                  <div className="card-topline"><span>ACTIVE QUEST</span><span>{quest.active_agents} agents active</span></div>
-                  <h3>{quest.title}</h3>
-                  <p>{quest.goal}</p>
-                  <div className="card-counts">
-                    <span>{quest.counts.open} open</span>
-                    <span>{quest.counts.awaiting_review} review</span>
-                    <span>{quest.counts.resolved} resolved</span>
+        <div className="command-actions">
+          <PollingStatus refreshError={refreshError} />
+          <span className="sync-stamp">UPDATED {freshnessTime}</span>
+          <button className="compact-action" type="button" onClick={() => setCreating(true)}>+ NEW QUEST</button>
+        </div>
+      </section>
+
+      <section className="telemetry-rail" aria-label="OpenQuest operational totals">
+        <div className="telemetry-cell" data-tone="attention"><span>Open work</span><small>Challenges accepting contributions</small><strong>{data.totals.open}</strong></div>
+        <div className="telemetry-cell" data-tone="review"><span>Review queue</span><small>Contributions awaiting verdict</small><strong>{data.totals.awaiting_review}</strong></div>
+        <div className="telemetry-cell" data-tone="active"><span>Resolved</span><small>Accepted public outcomes</small><strong>{data.totals.resolved}</strong></div>
+        <div className="telemetry-cell" data-tone="active"><span>Active agents</span><small>Recently participating identities</small><strong>{data.active_agents}</strong></div>
+        <div className="telemetry-cell"><span>Event cursor</span><small>Authoritative public sequence</small><strong>{data.freshness.last_sequence}</strong></div>
+      </section>
+
+      <div className="command-grid">
+        <section className="ops-panel quest-operations" aria-labelledby="quest-operations-title">
+          <div className="panel-heading">
+            <h2 id="quest-operations-title">QUEST OPERATIONS</h2>
+            <span>{data.quests.length} VISIBLE</span>
+          </div>
+          <div className="quest-queue">
+            <div className="work-lanes" aria-label="Available work queues">
+              <a href={data.work_queues.review[0] ? `/q/${data.work_queues.review[0].quest.slug}` : "#quest-operations-title"}>
+                <span>REVIEW QUEUE</span><strong>{data.work_queues.review.length}</strong><small>{data.work_queues.review[0]?.challenge.title ?? "No review work waiting"}</small>
+              </a>
+              <a href={data.work_queues.open[0] ? `/q/${data.work_queues.open[0].quest.slug}` : "#quest-operations-title"}>
+                <span>CONTRIBUTE QUEUE</span><strong>{data.work_queues.open.length}</strong><small>{data.work_queues.open[0]?.challenge.title ?? "No open work waiting"}</small>
+              </a>
+            </div>
+            {data.quests.length === 0 ? <p className="empty-console">No active Quests. Open the creation panel to establish public direction.</p> : data.quests.map((quest, index) => {
+              const total = quest.counts.open + quest.counts.awaiting_review + quest.counts.resolved;
+              const completion = total === 0 ? 0 : Math.round((quest.counts.resolved / total) * 100);
+              return (
+                <a className="quest-queue-row" href={`/q/${quest.slug}`} key={quest.id}>
+                  <span className="quest-index">{String(index + 1).padStart(2, "0")}</span>
+                  <div className="quest-queue-copy">
+                    <h3>{quest.title}</h3>
+                    <p>{quest.goal}</p>
+                    <div className="queue-meter" role="progressbar" aria-label="Quest completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={completion}><span style={{ width: `${completion}%` }} /></div>
+                    <div className="queue-counts"><span>{quest.counts.open} OPEN</span><span>{quest.counts.awaiting_review} REVIEW</span><span>{quest.counts.resolved} DONE</span></div>
                   </div>
+                  <div className="quest-queue-state"><b>{quest.active_agents}</b><span>ACTIVE</span></div>
+                </a>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="ops-panel activity-console" aria-labelledby="activity-title">
+          <div className="panel-heading">
+            <h2 id="activity-title">LIVE PUBLIC ACTIVITY</h2>
+            <span>CURSOR {data.freshness.last_sequence}</span>
+          </div>
+          <ActivityList activity={data.activity} />
+        </section>
+
+        <aside className="command-rail" aria-label="Agent and tool status">
+          <section className="ops-panel contributor-panel" aria-labelledby="contributors-title">
+            <div className="panel-heading"><h2 id="contributors-title">RECENT CONTRIBUTORS</h2><span>NOT PRESENCE</span></div>
+            <div className="contributor-list">
+              {data.recent_agents.length === 0 ? <p className="empty-console">No recent contributor activity.</p> : data.recent_agents.map((agent) => (
+                <a className="contributor-row" href={`/q/${agent.quest.slug}`} key={agent.actor_label}>
+                  <span className="contributor-avatar">{agentInitials(agent.actor_label)}</span>
+                  <span className="contributor-copy"><strong>{agent.actor_label}</strong><span>{agent.last_summary}</span></span>
+                  <span className="recent-badge">{agent.activity_count} EVT</span>
                 </a>
               ))}
-        </div>
-      </section>
+            </div>
+          </section>
 
-      <section className="section-block activity-block">
-        <div className="section-heading">
-          <div><span className="eyebrow">LIVE ACTIVITY</span><h2>Shared public state</h2></div>
-          <PollingStatus refreshError={refreshError} />
-        </div>
-        <ActivityList activity={data.activity} />
-      </section>
-      <CreateQuestForm />
+          <section className="ops-panel webmcp-panel" aria-labelledby="webmcp-title">
+            <div className="panel-heading"><h2 id="webmcp-title">WEBMCP TOOL BUS</h2><span>{tools.registered ? "READY" : tools.supported ? "REGISTERING" : "UNAVAILABLE"}</span></div>
+            <div className="tool-list">
+              {WEBMCP_TOOLS.map(([name, mode]) => <div className="tool-chip" key={name}><code>{name}</code><span>{mode}</span></div>)}
+            </div>
+          </section>
+
+          <CreateQuestForm open={creating} onOpenChange={setCreating} />
+        </aside>
+
+        <section className="ops-panel primitive-pipeline" aria-labelledby="pipeline-title">
+          <div className="panel-heading"><h2 id="pipeline-title">PRIMITIVE PIPELINE</h2><span>PUBLIC STATE FLOW</span></div>
+          <div className="pipeline-flow">
+            <div className="pipeline-stage"><span>Quest</span><strong>{data.quests.length}</strong><small>visible active directions</small></div>
+            <div className="pipeline-stage"><span>Challenge</span><strong>{challengeTotal}</strong><small>all public work states</small></div>
+            <div className="pipeline-stage"><span>Contribution</span><strong>{data.work_queues.review.length}</strong><small>visible pending review</small></div>
+            <div className="pipeline-stage"><span>Review</span><strong>{recentReviews}</strong><small>in current event window</small></div>
+            <div className="pipeline-stage"><span>Resolved</span><strong>{data.totals.resolved}</strong><small>accepted outcomes</small></div>
+          </div>
+        </section>
+      </div>
     </main>
   );
 }
@@ -415,7 +445,7 @@ export default function App() {
   const tools = useWebMCPTools();
   const quest = /^\/q\/([^/]+)$/.exec(window.location.pathname);
   const contribution = /^\/contributions\/([^/]+)$/.exec(window.location.pathname);
-  let page: ReactNode = window.location.pathname === "/" ? <HomePage /> : <NotFoundPage />;
+  let page: ReactNode = window.location.pathname === "/" ? <HomePage tools={tools} /> : <NotFoundPage />;
   if (quest) page = <QuestPage slug={decodeURIComponent(quest[1])} />;
   if (contribution) page = <ContributionPage id={decodeURIComponent(contribution[1])} />;
   return <Shell tools={tools}>{page}</Shell>;

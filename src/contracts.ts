@@ -122,10 +122,14 @@ export const EventTypeSchema = z.enum([
   "review.challenged",
 ]);
 
+export const AgentActivityEventTypeSchema = EventTypeSchema.exclude(["quest.created"]);
+
 export const EventSchema = z
   .object({
     sequence: z.number().int().positive(),
     quest_id: IdentifierSchema,
+    quest_slug: SlugSchema,
+    quest_title: TitleSchema,
     entity_id: IdentifierSchema,
     event_type: EventTypeSchema,
     actor_label: ActorLabelSchema.nullable(),
@@ -144,7 +148,7 @@ export const ObserveInputSchema = z
       .max(20)
       .default(10)
       .describe(
-        "Maximum active Quests and recent activity entries to return. Scoped Challenge previews use a separate fixed 100-item bound.",
+        "Maximum active Quests and recent activity entries to return. Challenge previews, recent agents, and work queues use separate fixed bounds.",
       ),
   })
   .strict();
@@ -230,11 +234,79 @@ export const ChallengeWithContributionSchema = ChallengeSchema.extend({
   contribution: ContributionPreviewSchema.nullable(),
 }).strict();
 
+export const QuestContextSchema = QuestSchema.pick({
+  id: true,
+  slug: true,
+  title: true,
+});
+
+const WorkQueueChallengeSchema = ChallengeSchema.pick({
+  id: true,
+  title: true,
+  description: true,
+  created_at: true,
+});
+
+export const ReviewQueueItemSchema = z
+  .object({
+    work_type: z.literal("review"),
+    quest: QuestContextSchema,
+    challenge: WorkQueueChallengeSchema.extend({
+      status: z.literal("awaiting_review"),
+    }).strict(),
+    contribution: ContributionSchema.pick({
+      id: true,
+      actor_label: true,
+      summary: true,
+      created_at: true,
+    }),
+  })
+  .strict();
+
+export const OpenQueueItemSchema = z
+  .object({
+    work_type: z.literal("contribute"),
+    quest: QuestContextSchema,
+    challenge: WorkQueueChallengeSchema.extend({
+      status: z.literal("open"),
+    }).strict(),
+  })
+  .strict();
+
+export const WorkQueuesSchema = z
+  .object({
+    review: z.array(ReviewQueueItemSchema).max(10),
+    open: z.array(OpenQueueItemSchema).max(10),
+  })
+  .strict();
+
+export const RecentlyActiveAgentSchema = z
+  .object({
+    actor_label: ActorLabelSchema,
+    quest: QuestContextSchema,
+    last_event: AgentActivityEventTypeSchema,
+    last_entity_id: IdentifierSchema,
+    last_summary: z.string().trim().min(1).max(500),
+    last_seen: IsoTimestampSchema,
+    activity_count: z.number().int().positive(),
+  })
+  .strict();
+
+export const FreshnessSchema = z
+  .object({
+    server_time: IsoTimestampSchema,
+    last_sequence: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const ObserveResponseSchema = z
   .object({
     quests: z.array(QuestCardSchema).max(20),
     totals: QuestCountsSchema,
     active_agents: z.number().int().nonnegative(),
+    recent_agents: z.array(RecentlyActiveAgentSchema).max(20),
+    work_queues: WorkQueuesSchema,
+    freshness: FreshnessSchema,
     challenges: z.array(ChallengeWithContributionSchema).max(100).optional(),
     activity: z.array(EventSchema).max(20),
   })
@@ -407,6 +479,9 @@ export type Contribution = z.output<typeof ContributionSchema>;
 export type ContributionPreview = z.output<typeof ContributionPreviewSchema>;
 export type Review = z.output<typeof ReviewSchema>;
 export type Event = z.output<typeof EventSchema>;
+export type ReviewQueueItem = z.output<typeof ReviewQueueItemSchema>;
+export type OpenQueueItem = z.output<typeof OpenQueueItemSchema>;
+export type RecentlyActiveAgent = z.output<typeof RecentlyActiveAgentSchema>;
 export type ObserveInput = z.input<typeof ObserveInputSchema>;
 export type GetNextWorkInput = z.input<typeof GetNextWorkInputSchema>;
 export type SubmitContributionInput = z.input<typeof SubmitContributionInputSchema>;

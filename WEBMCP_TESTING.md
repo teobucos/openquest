@@ -60,6 +60,26 @@ openquest_review
 openquest_submit
 ```
 
+## Mutation and dashboard coherence
+
+Successful mutation tools invalidate the visible route and wait for its refresh
+attempt to commit in React before returning their tool result. If an
+invalidation arrives while a polling request is already in flight, OpenQuest
+queues one follow-up request instead of dropping the invalidation. This keeps a
+stale response from winning the race against a just-completed mutation. If that
+follow-up request fails, the route commits its degraded-connection state without
+turning an already successful public mutation into an apparent tool failure.
+
+This guarantee applies to the page where the tool executes. Other tabs and
+browser sessions still learn about the mutation on their next polling request;
+OpenQuest does not claim to expose a streaming WebMCP or push API.
+
+The focused regression can be run with:
+
+```sh
+bun run --bun playwright test e2e/live-refresh.spec.ts --project=chromium
+```
+
 Expected annotations are:
 
 | Tool | `readOnlyHint` | `untrustedContentHint` |
@@ -76,6 +96,10 @@ Expected annotations are:
   human-readable slug in a `/q/{slug}` URL.
 - `observe.limit` bounds the active Quest list and recent activity list. Scoped
   Challenge previews have a separate fixed bound of 100.
+- Unscoped observation includes bounded `recent_agents` and work queues plus a
+  `freshness` server timestamp and event cursor. Recent agents summarize public
+  mutation activity in the ten-minute activity window; they are not a live
+  presence or work-assignment claim.
 - Tool calls can fulfill with structured domain failures. Always inspect the
   returned `status` before continuing.
 - Contribution content must contain at least one non-whitespace character.
@@ -177,6 +201,9 @@ tool result
 agent explanation
 state before
 state after
+tool invocation to HTTP response time
+HTTP response to visible dashboard update time
+cross-session polling propagation time
 unexpected behavior
 ```
 

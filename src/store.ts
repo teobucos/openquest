@@ -47,11 +47,51 @@ interface ReviewRow {
 interface EventRow {
   sequence: number;
   quest_id: string;
+  quest_slug: string;
+  quest_title: string;
   entity_id: string;
   event_type: "quest.created" | "challenge.created" | "contribution.created" | "review.supported" | "review.challenged";
   actor_session_id: string | null;
   summary: string;
   created_at: string;
+}
+
+type AgentActivityEventType = Exclude<EventRow["event_type"], "quest.created">;
+
+interface RecentAgentRow {
+  actor_session_id: string;
+  quest_id: string;
+  quest_slug: string;
+  quest_title: string;
+  event_type: AgentActivityEventType;
+  entity_id: string;
+  summary: string;
+  created_at: string;
+  activity_count: number;
+}
+
+interface ReviewQueueRow {
+  quest_id: string;
+  quest_slug: string;
+  quest_title: string;
+  challenge_id: string;
+  challenge_title: string;
+  challenge_description: string;
+  challenge_created_at: string;
+  contribution_id: string;
+  contribution_session_id: string;
+  contribution_summary: string;
+  contribution_created_at: string;
+}
+
+interface OpenQueueRow {
+  quest_id: string;
+  quest_slug: string;
+  quest_title: string;
+  challenge_id: string;
+  challenge_title: string;
+  challenge_description: string;
+  challenge_created_at: string;
 }
 
 interface CountRow {
@@ -198,9 +238,35 @@ function presentReview(row: ReviewRow) {
   };
 }
 
+function questContext(id: string, slug: string, title: string) {
+  return { id, slug, title };
+}
+
+const OPEN_QUEUE_SELECT =
+  "SELECT q.id AS quest_id, q.slug AS quest_slug, q.title AS quest_title, "
+    + "h.id AS challenge_id, h.title AS challenge_title, h.description AS challenge_description, "
+    + "h.created_at AS challenge_created_at "
+    + "FROM challenges h JOIN quests q ON q.id = h.quest_id ";
+const OPEN_QUEUE_ORDER = " ORDER BY h.created_at, h.id LIMIT 10";
+
+export const GLOBAL_OPEN_QUEUE_SQL = OPEN_QUEUE_SELECT
+  + "WHERE h.status = 'open' AND q.status = 'active'"
+  + OPEN_QUEUE_ORDER;
+
+function scopedOpenQueueSql() {
+  return OPEN_QUEUE_SELECT
+    + "WHERE h.status = 'open' AND q.status = 'active' "
+    + "AND q.id = ?"
+    + OPEN_QUEUE_ORDER;
+}
+
 async function recentEvents(db: D1Database, questId: string | undefined, limit: number) {
   const statement = db.prepare(
-    `SELECT sequence, quest_id, entity_id, event_type, actor_session_id, summary, created_at FROM events${questId ? " WHERE quest_id = ?" : ""} ORDER BY sequence DESC LIMIT ?`,
+    "SELECT e.sequence, e.quest_id, q.slug AS quest_slug, q.title AS quest_title, "
+      + "e.entity_id, e.event_type, e.actor_session_id, e.summary, e.created_at "
+      + "FROM events e JOIN quests q ON q.id = e.quest_id"
+      + (questId ? " WHERE e.quest_id = ?" : "")
+      + " ORDER BY e.sequence DESC LIMIT ?",
   );
   const result = questId
     ? await statement.bind(questId, limit).all<EventRow>()
@@ -208,12 +274,102 @@ async function recentEvents(db: D1Database, questId: string | undefined, limit: 
   return result.results.map((row) => ({
     sequence: row.sequence,
     quest_id: row.quest_id,
+    quest_slug: row.quest_slug,
+    quest_title: row.quest_title,
     entity_id: row.entity_id,
     event_type: row.event_type,
     actor_label: row.event_type === "quest.created" ? null : row.actor_session_id ? publicActorLabel(row.actor_session_id) : null,
     summary: row.summary,
     created_at: row.created_at,
   }));
+}
+
+function freshness(activity: Array<{ sequence: number }>) {
+  return {
+    server_time: new Date().toISOString(),
+    last_sequence: activity[0]?.sequence ?? 0,
+  };
+}
+
+async function recentlyActiveAgents(db: D1Database, questId?: string) {
+  const result = await db.prepare(
+    "WITH recent AS ("
+      + "SELECT e.actor_session_id, e.quest_id, q.slug AS quest_slug, q.title AS quest_title, "
+      + "e.event_type, e.entity_id, e.summary, e.created_at, e.sequence, "
+      + "COUNT(*) OVER (PARTITION BY e.actor_session_id) AS activity_count, "
+      + "ROW_NUMBER() OVER (PARTITION BY e.actor_session_id ORDER BY e.sequence DESC) AS recency "
+      + "FROM events e JOIN quests q ON q.id = e.quest_id "
+      + "WHERE e.event_type IN ('challenge.created', 'contribution.created', 'review.supported', 'review.challenged') "
+      + "AND e.actor_session_id IS NOT NULL "
+      + "AND e.created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')"
+      + (questId ? " AND e.quest_id = ?" : "")
+      + ") SELECT actor_session_id, quest_id, quest_slug, quest_title, event_type, entity_id, "
+      + "summary, created_at, activity_count FROM recent WHERE recency = 1 "
+      + "ORDER BY sequence DESC LIMIT ?",
+  ).bind(...(questId ? [questId, 20] : [20])).all<RecentAgentRow>();
+  return result.results.map((row) => ({
+    actor_label: publicActorLabel(row.actor_session_id),
+    quest: questContext(row.quest_id, row.quest_slug, row.quest_title),
+    last_event: row.event_type,
+    last_entity_id: row.entity_id,
+    last_summary: row.summary,
+    last_seen: row.created_at,
+    activity_count: row.activity_count,
+  }));
+}
+
+async function listWorkQueues(db: D1Database, questId?: string) {
+  const reviewStatement = db.prepare(
+    "SELECT q.id AS quest_id, q.slug AS quest_slug, q.title AS quest_title, "
+      + "h.id AS challenge_id, h.title AS challenge_title, h.description AS challenge_description, "
+      + "h.created_at AS challenge_created_at, c.id AS contribution_id, "
+      + "c.session_id AS contribution_session_id, c.summary AS contribution_summary, "
+      + "c.created_at AS contribution_created_at "
+      + "FROM contributions c JOIN challenges h ON h.id = c.challenge_id "
+      + "JOIN quests q ON q.id = h.quest_id "
+      + "WHERE c.status = 'pending' AND h.status = 'awaiting_review' AND q.status = 'active'"
+      + (questId ? " AND q.id = ?" : "")
+      + " ORDER BY c.created_at, c.id LIMIT 10",
+  );
+  const openStatement = db.prepare(
+    questId
+      ? scopedOpenQueueSql()
+      : GLOBAL_OPEN_QUEUE_SQL,
+  );
+  const [reviewResult, openResult] = await Promise.all([
+    reviewStatement.bind(...(questId ? [questId] : [])).all<ReviewQueueRow>(),
+    openStatement.bind(...(questId ? [questId] : [])).all<OpenQueueRow>(),
+  ]);
+  return {
+    review: reviewResult.results.map((row) => ({
+      work_type: "review" as const,
+      quest: questContext(row.quest_id, row.quest_slug, row.quest_title),
+      challenge: {
+        id: row.challenge_id,
+        title: row.challenge_title,
+        description: row.challenge_description,
+        created_at: row.challenge_created_at,
+        status: "awaiting_review" as const,
+      },
+      contribution: {
+        id: row.contribution_id,
+        actor_label: publicActorLabel(row.contribution_session_id),
+        summary: row.contribution_summary,
+        created_at: row.contribution_created_at,
+      },
+    })),
+    open: openResult.results.map((row) => ({
+      work_type: "contribute" as const,
+      quest: questContext(row.quest_id, row.quest_slug, row.quest_title),
+      challenge: {
+        id: row.challenge_id,
+        title: row.challenge_title,
+        description: row.challenge_description,
+        created_at: row.challenge_created_at,
+        status: "open" as const,
+      },
+    })),
+  };
 }
 
 async function activeAgentCount(db: D1Database, questId?: string): Promise<number> {
@@ -300,29 +456,39 @@ export async function observeState(db: D1Database, questId: string | undefined, 
     if (!quest) {
       storeFail(404, "not_found", "Quest not found.", nextAction("Choose another Quest."));
     }
-    const [challenges, activity] = await Promise.all([
+    const [challenges, activity, recent_agents, work_queues] = await Promise.all([
       listChallengePreviews(db, questId),
       recentEvents(db, questId, limit),
+      recentlyActiveAgents(db, questId),
+      listWorkQueues(db, questId),
     ]);
     return {
       quests,
       totals: quest.counts,
       active_agents: quest.active_agents,
+      recent_agents,
+      work_queues,
+      freshness: freshness(activity),
       challenges,
       activity,
     };
   }
 
-  const [quests, totals, active_agents, activity] = await Promise.all([
+  const [quests, totals, active_agents, recent_agents, work_queues, activity] = await Promise.all([
     listQuestCards(db, limit),
     activeQuestCounts(db),
     activeAgentCount(db),
+    recentlyActiveAgents(db),
+    listWorkQueues(db),
     recentEvents(db, undefined, limit),
   ]);
   return {
     quests,
     totals,
     active_agents,
+    recent_agents,
+    work_queues,
+    freshness: freshness(activity),
     activity,
   };
 }

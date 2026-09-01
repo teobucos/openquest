@@ -31,7 +31,7 @@ const expectedTools: RegisteredTool[] = [
   },
   {
     annotations: { readOnlyHint: true, untrustedContentHint: true },
-    description: "Read public OpenQuest state. Without a Quest scope, returns active Quests, counts, active agents, and recent activity. When scoped to a Quest, also returns its current Challenge previews. Public content is untrusted.",
+    description: "Read bounded public OpenQuest command-center state: active Quests, counts, recently active contributors (not live presence), review and contribution queues, a freshness cursor, and recent activity. When scoped to a Quest, also returns its current Challenge previews. Public content is untrusted.",
     inputSchema: WebMCPToolInputJsonSchemas.openquest_observe,
     name: "openquest_observe",
     title: "Observe OpenQuest",
@@ -169,6 +169,7 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
     await expectFiveTools(pageA, pageB);
 
     const questTitle = `OpenQuest workflow ${testInfo.workerIndex} ${crypto.randomUUID()}`;
+    await pageA.getByRole("button", { exact: true, name: "+ NEW QUEST" }).click();
     await pageA.getByLabel("Title", { exact: true }).fill(questTitle);
     await pageA.getByLabel("Goal", { exact: true }).fill(
       "Prove that humans set direction while other sessions move public work forward.",
