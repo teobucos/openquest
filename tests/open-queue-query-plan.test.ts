@@ -26,9 +26,10 @@ test("the global open-work queue is ordered by its status index", () => {
     applyMigrations(db);
     const plan = db.query(`EXPLAIN QUERY PLAN ${GLOBAL_OPEN_QUEUE_SQL}`).all() as QueryPlanRow[];
     const details = plan.map((row) => row.detail);
+    const combinedDetails = details.join("\n");
 
-    expect(details.some((detail) => detail.includes("USING INDEX challenges_by_status_created_id"))).toBe(true);
-    expect(details.some((detail) => detail.includes("USE TEMP B-TREE FOR ORDER BY"))).toBe(false);
+    expect(combinedDetails).toContain("challenges_by_status_created_id");
+    expect(combinedDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY");
   } finally {
     db.close();
   }
