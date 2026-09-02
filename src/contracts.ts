@@ -161,7 +161,6 @@ export const SubmitContributionResponseSchema = z.strictObject({ status: z.liter
 export const ReviewContributionResponseSchema = z.strictObject({ status: z.literal("review_recorded"), review_id: IdentifierSchema, verdict: ReviewVerdictSchema, challenge_status: z.enum(["open", "resolved"]) }).strict();
 export const CreateQuestResponseSchema = z.strictObject({ status: z.literal("created"), kind: z.literal("quest"), quest_id: IdentifierSchema, slug: SlugSchema, quest_status: z.literal("active"), message: z.string().trim().min(1).max(500), next_action: NextActionSchema }).strict();
 export const CreateChallengeResponseSchema = z.strictObject({ status: z.literal("created"), kind: z.literal("challenge"), challenge_id: IdentifierSchema, quest_id: IdentifierSchema, challenge_status: z.literal("open"), message: z.string().trim().min(1).max(500), next_action: NextActionSchema }).strict();
-export const ProposeResponseSchema = z.discriminatedUnion("kind", [CreateQuestResponseSchema, CreateChallengeResponseSchema]);
 export const ApiErrorResponseSchema = z.strictObject({ status: z.enum(["invalid_input", "not_found", "quest_unavailable", "challenge_unavailable", "contribution_unavailable", "self_review_forbidden", "rate_limited", "error"]), message: z.string().trim().min(1).max(500), next_action: NextActionSchema.optional() }).strict();
 export const WebMCPToolInputJsonSchemas = {
   openquest_observe: z.toJSONSchema(ObserveInputSchema, { io: "input", target: "draft-7" }),
@@ -203,5 +202,5 @@ export type SubmitContributionResponse = z.output<typeof SubmitContributionRespo
 export type ReviewContributionResponse = z.output<typeof ReviewContributionResponseSchema>;
 export type CreateQuestResponse = z.output<typeof CreateQuestResponseSchema>;
 export type CreateChallengeResponse = z.output<typeof CreateChallengeResponseSchema>;
-export type ProposeResponse = z.output<typeof ProposeResponseSchema>;
+export type ProposeResponse = CreateQuestResponse | CreateChallengeResponse;
 export type ApiErrorResponse = z.output<typeof ApiErrorResponseSchema>;
