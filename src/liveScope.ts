@@ -17,6 +17,7 @@ function invalidLiveRequest(message: string, status = 400): Response {
 export async function validateLiveSocketRequest(
   request: Request,
   hasQuest: QuestScopeLookup,
+  allowedOrigin = new URL(request.url).origin,
 ): Promise<Response | ValidatedLiveScope> {
   if (request.method !== "GET") {
     return invalidLiveRequest("Live transport only accepts GET WebSocket upgrades.", 405);
@@ -25,7 +26,7 @@ export async function validateLiveSocketRequest(
     return invalidLiveRequest("WebSocket upgrade required.", 426);
   }
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) {
+  if (origin && origin !== allowedOrigin) {
     return invalidLiveRequest("Live transport origin is not allowed.", 403);
   }
   const questId = parseLiveQuestId(new URL(request.url));

@@ -16,7 +16,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bun run build && bun scripts/start-live-test-worker.mjs",
+    command: "bun run build && bun scripts/start-local-worker.mjs",
     url: "http://127.0.0.1:4178/",
     reuseExistingServer: false,
     timeout: 120_000,
