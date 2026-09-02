@@ -44,4 +44,20 @@ describe("OpenQuest live socket scope validation", () => {
 
     expect(result).toEqual({ questId: "quest_present" });
   });
+
+  it("accepts a configured public Origin behind a local HTTPS terminator", async () => {
+    const request = new Request("http://127.0.0.1:4173/api/live", {
+      headers: {
+        origin: "https://openquest.tailnet.example:8449",
+        upgrade: "websocket",
+      },
+    });
+    const result = await validateLiveSocketRequest(
+      request,
+      async () => true,
+      "https://openquest.tailnet.example:8449",
+    );
+
+    expect(result).toEqual({ questId: undefined });
+  });
 });

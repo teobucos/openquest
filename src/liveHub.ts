@@ -11,6 +11,7 @@ import { DurableObject } from "cloudflare:workers";
 export interface LiveHubEnvironment {
   DB: D1Database;
   LIVE_HUB: DurableObjectNamespace;
+  OPENQUEST_PUBLIC_ORIGIN?: string;
 }
 
 function invalidLiveRequest(message: string, status = 400): Response {
@@ -32,6 +33,7 @@ export async function upgradeLiveSocket(
   const scope = await validateLiveSocketRequest(
     request,
     (questId) => questExists(env.DB, questId),
+    env.OPENQUEST_PUBLIC_ORIGIN,
   );
   if (scope instanceof Response) return scope;
   const hub = env.LIVE_HUB.get(env.LIVE_HUB.idFromName(liveHubName(scope.questId)));
