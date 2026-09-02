@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { connect } from "node:net";
 import {
   CreateChallengeResponseSchema,
   CreateQuestResponseSchema,
@@ -20,6 +21,41 @@ declare global {
 
 function challengeRow(page: Page, title: string) {
   return page.locator(".work-row").filter({ hasText: title });
+}
+
+function rawLiveHandshake(path: string, origin?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(4178, "127.0.0.1");
+    let response = "";
+    let settled = false;
+
+    const complete = (result: string | Error) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      if (result instanceof Error) reject(result);
+      else resolve(result);
+    };
+    socket.setTimeout(5_000, () => complete(new Error("Timed out waiting for live WebSocket handshake.")));
+    socket.once("error", (error) => complete(error));
+    socket.once("connect", () => {
+      const headers = [
+        `GET ${path} HTTP/1.1`,
+        "Host: 127.0.0.1:4178",
+        "Connection: Upgrade",
+        "Upgrade: websocket",
+        "Sec-WebSocket-Key: b3BlbnF1ZXN0LWxpdmUtdGVzdA==",
+        "Sec-WebSocket-Version: 13",
+      ];
+      if (origin) headers.push(`Origin: ${origin}`);
+      socket.write(`${headers.join("\r\n")}\r\n\r\n`);
+    });
+    socket.on("data", (chunk: Buffer) => {
+      response += chunk.toString();
+      if (response.includes("\r\n\r\n")) complete(response);
+    });
+    socket.once("end", () => complete(response));
+  });
 }
 
 const expectedToolNames = [
@@ -83,6 +119,19 @@ test("the generated Worker assets serve the real control-center SPA", async ({ p
   expect(response?.headers()["content-type"]).toContain("text/html");
   await expect(page.getByRole("heading", { name: "OPENQUEST CONTROL CENTER" })).toBeVisible();
   await expect(page.locator(".live-indicator")).toHaveText("LIVE");
+});
+
+test("the real Worker validates live scope and Origin before accepting a socket", async () => {
+  const missingQuest = await rawLiveHandshake(
+    `/api/live?quest_id=quest_missing_${crypto.randomUUID().replaceAll("-", "")}`,
+  );
+  expect(missingQuest).toMatch(/^HTTP\/1\.1 404\b/);
+
+  const mismatchedOrigin = await rawLiveHandshake("/api/live", "http://other.example");
+  expect(mismatchedOrigin).toMatch(/^HTTP\/1\.1 403\b/);
+
+  const absentOrigin = await rawLiveHandshake("/api/live");
+  expect(absentOrigin).toMatch(/^HTTP\/1\.1 101\b/);
 });
 
 test("two isolated dashboards receive open, Review, and Result state through Worker WebSockets", async ({ browser }) => {
