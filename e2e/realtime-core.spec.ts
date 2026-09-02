@@ -269,6 +269,73 @@ test("queued snapshots keep each route scope exact and leave only the final netw
   }
 });
 
+test("same-scope search navigation retains its snapshot while a refresh is in flight", async ({ page }) => {
+  test.setTimeout(30_000);
+  await installSocketTracking(page);
+  let worldReads = 0;
+  let holdNextRefresh = false;
+  let heldRefresh = false;
+  let markRefreshHeld: (() => void) | undefined;
+  let releaseRefresh: (() => void) | undefined;
+  let markRefreshSettled: (() => void) | undefined;
+  const refreshHeld = new Promise<void>((resolve) => {
+    markRefreshHeld = resolve;
+  });
+  const refreshReleased = new Promise<void>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  const refreshSettled = new Promise<void>((resolve) => {
+    markRefreshSettled = resolve;
+  });
+
+  await page.route("**/api/world*", async (route) => {
+    worldReads += 1;
+    if (!holdNextRefresh) {
+      await route.continue();
+      return;
+    }
+    holdNextRefresh = false;
+    heldRefresh = true;
+    const response = await route.fetch();
+    markRefreshHeld?.();
+    await refreshReleased;
+    await route.fulfill({ response });
+    markRefreshSettled?.();
+  });
+
+  try {
+    await page.goto("/");
+    await expect(page.locator(".live-indicator")).toHaveText("LIVE");
+    await page.waitForTimeout(100);
+    const baselineWorldReads = worldReads;
+
+    holdNextRefresh = true;
+    await page.evaluate(() => window.dispatchEvent(new Event("openquest:changed")));
+    await refreshHeld;
+    expect(worldReads).toBe(baselineWorldReads + 1);
+
+    await page.getByRole("button", { exact: true, name: "OPEN" }).click();
+    await expect(page).toHaveURL(/status=open/);
+    await expect(page.locator(".loading")).toHaveCount(0);
+    expect(worldReads).toBe(baselineWorldReads + 1);
+
+    await page.locator(".work-row").first().click();
+    await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toBeVisible();
+    await expect(page.locator(".loading")).toHaveCount(0);
+    expect(worldReads).toBe(baselineWorldReads + 1);
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toHaveCount(0);
+    await expect(page.locator(".loading")).toHaveCount(0);
+    expect(worldReads).toBe(baselineWorldReads + 1);
+  } finally {
+    if (heldRefresh) {
+      releaseRefresh?.();
+      await refreshSettled;
+    }
+  }
+});
+
 test("a live target retries after a failed snapshot and ignores duplicate or older invalidations", async ({ page }) => {
   test.setTimeout(30_000);
   await installSocketTracking(page);

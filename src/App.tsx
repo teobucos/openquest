@@ -52,11 +52,11 @@ function Dashboard({
   onNavigate: RouteNavigationHandler;
   tools: WebMCPToolsState;
 }) {
-  const request = useCallback(() => route.scope.kind === "quest"
-    ? observeQuestSlug(route.scope.slug, 20)
-    : observe({ limit: 20 }), [route.scope]);
-  const { data, error, loading, refreshError, reload } = useRemoteData<ObserveResponse>(request);
   const selectedQuestSlug = route.scope.kind === "quest" ? route.scope.slug : null;
+  const request = useCallback(() => selectedQuestSlug
+    ? observeQuestSlug(selectedQuestSlug, 20)
+    : observe({ limit: 20 }), [selectedQuestSlug]);
+  const { data, error, loading, refreshError, reload } = useRemoteData<ObserveResponse>(request);
   const scopedQuest = selectedQuestSlug
     ? data?.quests.find((quest) => quest.slug === selectedQuestSlug) ?? null
     : null;
