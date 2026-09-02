@@ -14,6 +14,7 @@ interface OrganizationRow {
 
 interface QuestRow extends OrganizationRow {
   id: string;
+  is_demo: number;
   slug: string;
   title: string;
   goal: string;
@@ -73,6 +74,7 @@ interface IdRow { id: string; }
 interface ContributorRow extends OrganizationRow {
   actor_session_id: string;
   quest_id: string;
+  quest_is_demo: number;
   quest_slug: string;
   quest_title: string;
   event_type: "challenge.created" | "contribution.created" | "review.supported" | "review.challenged";
@@ -83,6 +85,7 @@ interface ContributorRow extends OrganizationRow {
 }
 interface WorkStreamRow extends OrganizationRow {
   quest_id: string;
+  quest_is_demo: number;
   quest_slug: string;
   quest_title: string;
   challenge_id: string;
@@ -110,6 +113,7 @@ interface ContributionDetailRow extends ContributionRow {
   challenge_created_at: string;
   challenge_updated_at: string;
   quest_id: string;
+  quest_is_demo: number;
   quest_slug: string;
   quest_title: string;
   quest_goal: string;
@@ -169,13 +173,13 @@ function presentOrganization(row: OrganizationRow) {
 }
 
 function presentQuest(row: QuestRow) {
-  return { id: row.id, slug: row.slug, title: row.title, goal: row.goal, description: row.description, status: row.status, created_at: row.created_at, updated_at: row.updated_at };
+  return { id: row.id, slug: row.slug, title: row.title, goal: row.goal, description: row.description, status: row.status, is_demo: row.is_demo === 1, created_at: row.created_at, updated_at: row.updated_at };
 }
 function presentQuestWithOrganization(row: QuestRow) {
   return { ...presentQuest(row), organization: presentOrganization(row) };
 }
-function questContext(row: Pick<QuestRow, "id" | "slug" | "title"> & OrganizationRow) {
-  return { id: row.id, slug: row.slug, title: row.title, organization: presentOrganization(row) };
+function questContext(row: Pick<QuestRow, "id" | "slug" | "title" | "is_demo"> & OrganizationRow) {
+  return { id: row.id, slug: row.slug, title: row.title, is_demo: row.is_demo === 1, organization: presentOrganization(row) };
 }
 function presentChallenge(row: ChallengeRow) {
   return { id: row.id, quest_id: row.quest_id, title: row.title, description: row.description, status: row.status, created_at: row.created_at, updated_at: row.updated_at };
@@ -237,20 +241,20 @@ async function recentContributors(db: D1Database, questId?: string) {
     : "events e INDEXED BY events_by_contributor_recency";
   const statement = db.prepare(
     "WITH contributor_events AS ("
-      + "SELECT e.actor_session_id, e.quest_id, q.slug AS quest_slug, q.title AS quest_title, " + organizationSelect + ", "
+      + "SELECT e.actor_session_id, e.quest_id, q.is_demo AS quest_is_demo, q.slug AS quest_slug, q.title AS quest_title, " + organizationSelect + ", "
       + "e.event_type, e.entity_id, e.summary, e.created_at, e.sequence, "
       + "COUNT(*) OVER (PARTITION BY e.actor_session_id) AS activity_count, "
       + "ROW_NUMBER() OVER (PARTITION BY e.actor_session_id ORDER BY e.sequence DESC) AS recency "
       + "FROM " + eventsSource + " JOIN quests q ON q.id = e.quest_id" + organizationJoin + " "
       + "WHERE e.event_type IN ('challenge.created', 'contribution.created', 'review.supported', 'review.challenged') AND e.actor_session_id IS NOT NULL"
       + (questId ? " AND e.quest_id = ?" : "")
-      + ") SELECT actor_session_id, quest_id, quest_slug, quest_title, organization_id, organization_slug, organization_name, organization_category, organization_verification_status, organization_is_demo, organization_ror_id, event_type, entity_id, summary, created_at, activity_count "
+      + ") SELECT actor_session_id, quest_id, quest_is_demo, quest_slug, quest_title, organization_id, organization_slug, organization_name, organization_category, organization_verification_status, organization_is_demo, organization_ror_id, event_type, entity_id, summary, created_at, activity_count "
       + "FROM contributor_events WHERE recency = 1 ORDER BY sequence DESC LIMIT 20",
   );
   const result = questId ? await statement.bind(questId).all<ContributorRow>() : await statement.all<ContributorRow>();
   return result.results.map((row) => ({
     actor_label: publicActorLabel(row.actor_session_id),
-    quest: questContext({ id: row.quest_id, slug: row.quest_slug, title: row.quest_title, ...row }),
+    quest: questContext({ id: row.quest_id, is_demo: row.quest_is_demo, slug: row.quest_slug, title: row.quest_title, ...row }),
     last_event: row.event_type,
     last_entity_id: row.entity_id,
     last_summary: row.summary,
@@ -259,7 +263,7 @@ async function recentContributors(db: D1Database, questId?: string) {
   }));
 }
 
-const workStreamSelect = "q.id AS quest_id, q.slug AS quest_slug, q.title AS quest_title, " + organizationSelect + ", "
+const workStreamSelect = "q.id AS quest_id, q.is_demo AS quest_is_demo, q.slug AS quest_slug, q.title AS quest_title, " + organizationSelect + ", "
   + "h.id AS challenge_id, h.title AS challenge_title, h.description AS challenge_description, h.status AS challenge_status, h.created_at AS challenge_created_at, h.updated_at AS challenge_updated_at, "
   + "c.id AS contribution_id, c.session_id AS contribution_session_id, c.summary AS contribution_summary, c.status AS contribution_status, c.created_at AS contribution_created_at ";
 
@@ -294,7 +298,7 @@ async function workStream(db: D1Database, questId?: string) {
   function present(row: WorkStreamRow, stream_state: "review" | "open" | "resolved") {
     return {
       stream_state,
-      quest: questContext({ id: row.quest_id, slug: row.quest_slug, title: row.quest_title, ...row }),
+      quest: questContext({ id: row.quest_id, is_demo: row.quest_is_demo, slug: row.quest_slug, title: row.quest_title, ...row }),
       challenge: { id: row.challenge_id, title: row.challenge_title, description: row.challenge_description, status: row.challenge_status, created_at: row.challenge_created_at, updated_at: row.challenge_updated_at },
       contribution: row.contribution_id && row.contribution_session_id && row.contribution_summary && row.contribution_status && row.contribution_created_at
         ? { id: row.contribution_id, actor_label: publicActorLabel(row.contribution_session_id), summary: row.contribution_summary, status: row.contribution_status, created_at: row.contribution_created_at }
@@ -315,7 +319,7 @@ async function getQuestCounts(db: D1Database, questId?: string) {
 
 async function listQuestCards(db: D1Database, limit: number, questId?: string) {
   const result = await db.prepare(
-    "SELECT q.id, q.slug, q.title, q.goal, q.description, q.status, q.created_at, q.updated_at, " + organizationSelect + ", "
+    "SELECT q.id, q.slug, q.title, q.goal, q.description, q.status, q.is_demo, q.created_at, q.updated_at, " + organizationSelect + ", "
       + "COALESCE(SUM(CASE WHEN c.status = 'open' THEN 1 ELSE 0 END), 0) AS open, COALESCE(SUM(CASE WHEN c.status = 'awaiting_review' THEN 1 ELSE 0 END), 0) AS awaiting_review, COALESCE(SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END), 0) AS resolved "
       + "FROM quests q" + organizationJoin + " LEFT JOIN challenges c ON c.quest_id = q.id "
       + (questId ? "WHERE q.id = ? " : "WHERE q.status = 'active' ")
@@ -341,6 +345,10 @@ async function listChallengePreviews(db: D1Database, questId: string) {
 export async function resolveQuestIdForSlug(db: D1Database, slug: string) {
   const row = await db.prepare("SELECT id FROM quests WHERE slug = ?").bind(slug).first<IdRow>();
   return row?.id ?? null;
+}
+export async function questExists(db: D1Database, questId: string): Promise<boolean> {
+  const row = await db.prepare("SELECT 1 AS present FROM quests WHERE id = ?").bind(questId).first();
+  return row !== null;
 }
 export async function resolveQuestIdForChallenge(db: D1Database, challengeId: string) {
   const row = await db.prepare("SELECT quest_id AS id FROM challenges WHERE id = ?").bind(challengeId).first<IdRow>();
@@ -387,7 +395,7 @@ export async function getQuest(db: D1Database, slug: string) {
 
 export async function getContribution(db: D1Database, id: string) {
   const contribution = await db.prepare(
-    "SELECT c.id, c.challenge_id, c.session_id, c.summary, c.content, c.evidence_json, c.status, c.created_at, h.title AS challenge_title, h.description AS challenge_description, h.status AS challenge_status, h.created_at AS challenge_created_at, h.updated_at AS challenge_updated_at, q.id AS quest_id, q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description "
+    "SELECT c.id, c.challenge_id, c.session_id, c.summary, c.content, c.evidence_json, c.status, c.created_at, h.title AS challenge_title, h.description AS challenge_description, h.status AS challenge_status, h.created_at AS challenge_created_at, h.updated_at AS challenge_updated_at, q.id AS quest_id, q.is_demo AS quest_is_demo, q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description "
       + "FROM contributions c JOIN challenges h ON h.id = c.challenge_id JOIN quests q ON q.id = h.quest_id WHERE c.id = ?",
   ).bind(id).first<ContributionDetailRow>();
   if (!contribution) storeFail(404, "not_found", "Contribution not found.");
@@ -462,22 +470,22 @@ export async function nextWork(db: D1Database, actor: ActorIdentity | null, inpu
   const mode = input.mode ?? "any";
   if (input.quest_id) await requireActiveQuest(db, input.quest_id);
   if (mode !== "contribute") {
-    let sql = "SELECT c.id, c.challenge_id, c.session_id, c.summary, c.content, c.evidence_json, c.status, c.created_at, h.title AS challenge_title, h.description AS challenge_description, q.id AS quest_id, q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description, " + organizationSelect + " FROM contributions c JOIN challenges h ON h.id = c.challenge_id JOIN quests q ON q.id = h.quest_id" + organizationJoin + " WHERE c.status = 'pending' AND h.status = 'awaiting_review' AND q.status = 'active'";
+    let sql = "SELECT c.id, c.challenge_id, c.session_id, c.summary, c.content, c.evidence_json, c.status, c.created_at, h.title AS challenge_title, h.description AS challenge_description, q.id AS quest_id, q.is_demo AS quest_is_demo, q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description, " + organizationSelect + " FROM contributions c JOIN challenges h ON h.id = c.challenge_id JOIN quests q ON q.id = h.quest_id" + organizationJoin + " WHERE c.status = 'pending' AND h.status = 'awaiting_review' AND q.status = 'active'";
     const bindings: string[] = [];
     if (actor) { sql += " AND c.session_id <> ?"; bindings.push(actor.id); }
     if (input.quest_id) { sql += " AND q.id = ?"; bindings.push(input.quest_id); }
     sql += " ORDER BY c.created_at ASC, c.id ASC LIMIT 1";
     const review = await db.prepare(sql).bind(...bindings).first<ContributionDetailRow & OrganizationRow>();
-    if (review) return { status: "work_available" as const, work_type: "review" as const, quest: { id: review.quest_id, slug: review.quest_slug, title: review.quest_title, goal: review.quest_goal, description: review.quest_description, organization: presentOrganization(review) }, challenge: { id: review.challenge_id, title: review.challenge_title, description: review.challenge_description }, contribution: { id: review.id, summary: review.summary, content: review.content, evidence: parseEvidence(review.evidence_json) }, why_now: "This is the oldest eligible Contribution waiting for cross-session Review.", done_when: "Independently check the work and call openquest_review." };
+    if (review) return { status: "work_available" as const, work_type: "review" as const, quest: { id: review.quest_id, slug: review.quest_slug, title: review.quest_title, goal: review.quest_goal, description: review.quest_description, is_demo: review.quest_is_demo === 1, organization: presentOrganization(review) }, challenge: { id: review.challenge_id, title: review.challenge_title, description: review.challenge_description }, contribution: { id: review.id, summary: review.summary, content: review.content, evidence: parseEvidence(review.evidence_json) }, why_now: "This is the oldest eligible Contribution waiting for cross-session Review.", done_when: "Independently check the work and call openquest_review." };
     if (mode === "review") return { status: "no_work_available" as const };
   }
-  let sql = "SELECT q.id AS quest_id, q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description, h.id AS challenge_id, h.title AS challenge_title, h.description AS challenge_description, " + organizationSelect + " FROM challenges h JOIN quests q ON q.id = h.quest_id" + organizationJoin + " WHERE h.status = 'open' AND q.status = 'active'";
+  let sql = "SELECT q.id AS quest_id, q.is_demo AS quest_is_demo, q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description, h.id AS challenge_id, h.title AS challenge_title, h.description AS challenge_description, " + organizationSelect + " FROM challenges h JOIN quests q ON q.id = h.quest_id" + organizationJoin + " WHERE h.status = 'open' AND q.status = 'active'";
   const bindings: string[] = [];
   if (input.quest_id) { sql += " AND q.id = ?"; bindings.push(input.quest_id); }
   sql += " ORDER BY h.created_at ASC, h.id ASC LIMIT 1";
-  const challenge = await db.prepare(sql).bind(...bindings).first<{ quest_id: string; quest_slug: string; quest_title: string; quest_goal: string; quest_description: string; challenge_id: string; challenge_title: string; challenge_description: string; } & OrganizationRow>();
+  const challenge = await db.prepare(sql).bind(...bindings).first<{ quest_id: string; quest_is_demo: number; quest_slug: string; quest_title: string; quest_goal: string; quest_description: string; challenge_id: string; challenge_title: string; challenge_description: string; } & OrganizationRow>();
   if (!challenge) return { status: "no_work_available" as const };
-  return { status: "work_available" as const, work_type: "contribute" as const, quest: { id: challenge.quest_id, slug: challenge.quest_slug, title: challenge.quest_title, goal: challenge.quest_goal, description: challenge.quest_description, organization: presentOrganization(challenge) }, challenge: { id: challenge.challenge_id, title: challenge.challenge_title, description: challenge.challenge_description }, why_now: "This is the oldest open Challenge in scope.", done_when: "Submit useful public work with openquest_submit." };
+  return { status: "work_available" as const, work_type: "contribute" as const, quest: { id: challenge.quest_id, slug: challenge.quest_slug, title: challenge.quest_title, goal: challenge.quest_goal, description: challenge.quest_description, is_demo: challenge.quest_is_demo === 1, organization: presentOrganization(challenge) }, challenge: { id: challenge.challenge_id, title: challenge.challenge_title, description: challenge.challenge_description }, why_now: "This is the oldest open Challenge in scope.", done_when: "Submit useful public work with openquest_submit." };
 }
 export async function submitContribution(db: D1Database, actor: ActorIdentity, input: { challenge_id: string; summary: string; content: string; evidence: EvidenceList }) {
   const id = crypto.randomUUID();

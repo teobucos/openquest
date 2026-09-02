@@ -60,3 +60,21 @@ test("the additive ROR constraint accepts null and canonical URLs without an off
     db.close();
   }
 });
+
+test("the additive Quest demo migration marks only known legacy fixtures", () => {
+  const db = new Database(":memory:");
+  try {
+    applyMigrations(db);
+    expect(db.query(
+      "SELECT id, is_demo FROM quests WHERE id IN ('quest_open_cancer_research', 'quest_accessible_hcmc', 'quest_webmcp_documentation') ORDER BY id",
+    ).all()).toEqual([
+      { id: "quest_accessible_hcmc", is_demo: 1 },
+      { id: "quest_open_cancer_research", is_demo: 1 },
+      { id: "quest_webmcp_documentation", is_demo: 1 },
+    ]);
+    db.exec("INSERT INTO quests (id, slug, title, goal, description) VALUES ('quest_public', 'public-quest', 'Public Quest', 'Keep user-created Quest provenance server controlled.', '')");
+    expect(db.query("SELECT is_demo FROM quests WHERE id = 'quest_public'").get()).toEqual({ is_demo: 0 });
+  } finally {
+    db.close();
+  }
+});

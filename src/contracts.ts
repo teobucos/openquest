@@ -58,6 +58,7 @@ export const QuestSchema = z.strictObject({
   goal: QuestGoalSchema,
   description: QuestDescriptionSchema,
   status: QuestStatusSchema,
+  is_demo: z.boolean(),
   created_at: IsoTimestampSchema,
   updated_at: IsoTimestampSchema,
 }).strict();
@@ -119,7 +120,7 @@ export const ProposeInputSchema = z.discriminatedUnion("kind", [ProposeQuestInpu
 
 export const QuestCountsSchema = z.strictObject({ open: z.number().int().nonnegative(), awaiting_review: z.number().int().nonnegative(), resolved: z.number().int().nonnegative() }).strict();
 export const QuestCardSchema = QuestWithOrganizationSchema.extend({ counts: QuestCountsSchema }).strict();
-export const QuestContextSchema = QuestWithOrganizationSchema.pick({ id: true, slug: true, title: true, organization: true });
+export const QuestContextSchema = QuestWithOrganizationSchema.pick({ id: true, slug: true, title: true, is_demo: true, organization: true });
 export const ContributorSchema = z.strictObject({
   actor_label: ActorLabelSchema, quest: QuestContextSchema, last_event: ContributorEventTypeSchema,
   last_entity_id: IdentifierSchema, last_summary: z.string().trim().min(1).max(500), last_active_at: IsoTimestampSchema,
@@ -148,7 +149,7 @@ export const ObserveResponseSchema = z.strictObject({
 export const QuestResponseSchema = z.strictObject({ quest: QuestWithOrganizationSchema, counts: QuestCountsSchema, contributor_count: z.number().int().nonnegative(), challenges: z.array(ChallengePreviewSchema).max(30), activity: z.array(EventSchema).max(20) }).strict();
 export const ContributionResponseSchema = z.strictObject({ contribution: ContributionSchema, challenge: ChallengeSchema, quest: QuestWithOrganizationSchema, review: ReviewSchema.nullable() }).strict();
 
-const WorkQuestSchema = QuestWithOrganizationSchema.pick({ id: true, slug: true, title: true, goal: true, description: true, organization: true });
+const WorkQuestSchema = QuestWithOrganizationSchema.pick({ id: true, slug: true, title: true, goal: true, description: true, is_demo: true, organization: true });
 const WorkChallengeSchema = ChallengeSchema.pick({ id: true, title: true, description: true });
 export const NextContributionWorkSchema = z.strictObject({ status: z.literal("work_available"), work_type: z.literal("contribute"), quest: WorkQuestSchema, challenge: WorkChallengeSchema, why_now: z.string().trim().min(1).max(500), done_when: z.string().trim().min(1).max(500) }).strict();
 export const NextReviewWorkSchema = z.strictObject({ status: z.literal("work_available"), work_type: z.literal("review"), quest: WorkQuestSchema, challenge: WorkChallengeSchema, contribution: ContributionSchema.pick({ id: true, summary: true, content: true, evidence: true }), why_now: z.string().trim().min(1).max(500), done_when: z.string().trim().min(1).max(500) }).strict();

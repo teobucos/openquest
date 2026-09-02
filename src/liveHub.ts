@@ -1,18 +1,16 @@
 import {
   liveHubName,
   parseLiveInvalidation,
-  parseLiveQuestId,
   serializeLiveInvalidation,
 } from "./liveProtocol";
+import { validateLiveSocketRequest } from "./liveScope";
 import { broadcastLiveInvalidation as broadcastInvalidation } from "./liveTransport";
+import { questExists } from "./store";
 import { DurableObject } from "cloudflare:workers";
 
 export interface LiveHubEnvironment {
+  DB: D1Database;
   LIVE_HUB: DurableObjectNamespace;
-}
-
-function hasWebSocketUpgrade(request: Request): boolean {
-  return request.headers.get("upgrade")?.toLowerCase() === "websocket";
 }
 
 function invalidLiveRequest(message: string, status = 400): Response {
@@ -31,17 +29,12 @@ export async function upgradeLiveSocket(
   request: Request,
   env: LiveHubEnvironment,
 ): Promise<Response> {
-  if (request.method !== "GET") {
-    return invalidLiveRequest("Live transport only accepts GET WebSocket upgrades.", 405);
-  }
-  if (!hasWebSocketUpgrade(request)) {
-    return invalidLiveRequest("WebSocket upgrade required.", 426);
-  }
-  const questId = parseLiveQuestId(new URL(request.url));
-  if (questId === null) {
-    return invalidLiveRequest("Live transport scope is invalid.");
-  }
-  const hub = env.LIVE_HUB.get(env.LIVE_HUB.idFromName(liveHubName(questId)));
+  const scope = await validateLiveSocketRequest(
+    request,
+    (questId) => questExists(env.DB, questId),
+  );
+  if (scope instanceof Response) return scope;
+  const hub = env.LIVE_HUB.get(env.LIVE_HUB.idFromName(liveHubName(scope.questId)));
   return hub.fetch(request);
 }
 
@@ -59,7 +52,7 @@ export class LiveHub extends DurableObject<LiveHubEnvironment> {
       return new Response(null, { status: 204 });
     }
 
-    if (!hasWebSocketUpgrade(request)) {
+    if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return invalidLiveRequest("WebSocket upgrade required.", 426);
     }
     try {

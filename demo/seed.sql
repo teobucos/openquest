@@ -34,17 +34,30 @@ INSERT OR IGNORE INTO organizations (
   ('demo_org_orbit', 'orbit-public-works', 'Orbit Public Works', 'A fictional public-interest engineering group for the OpenQuest demo.', 'other', 'https://example.com/orbit-public-works', 'unverified', NULL, 1, '2026-07-01T09:03:00.000Z', '2026-07-01T09:03:00.000Z');
 
 INSERT OR IGNORE INTO quests (
-  id, slug, title, goal, description, status, primary_organization_id,
+  id, slug, title, goal, description, status, is_demo, primary_organization_id,
   created_by_session_id, created_at, updated_at
 ) VALUES
-  ('demo_quest_tide', 'tide-notes', 'Tide Notes', 'Build a fictional, source-backed guide to observing changing shoreline access.', 'Synthetic demo content about a fictional shoreline observation project.', 'active', 'demo_org_lattice', 'demo_session_01', '2026-07-02T09:00:00.000Z', '2026-07-18T10:00:00.000Z'),
-  ('demo_quest_signal', 'signal-garden', 'Signal Garden', 'Create a fictional public map of low-power community signal experiments.', 'Synthetic demo content about small, public communication experiments.', 'active', 'demo_org_moonwater', 'demo_session_02', '2026-07-02T09:01:00.000Z', '2026-07-18T10:01:00.000Z'),
-  ('demo_quest_steps', 'shared-steps', 'Shared Steps', 'Document fictional barriers and improvements in a neighborhood walking network.', 'Synthetic demo content about accessible public-space observations.', 'active', 'demo_org_northwind', 'demo_session_03', '2026-07-02T09:02:00.000Z', '2026-07-18T10:02:00.000Z'),
-  ('demo_quest_air', 'open-air-ledger', 'Open Air Ledger', 'Compare fictional low-cost air observations with transparent public methods.', 'Synthetic demo content about reproducible local measurements.', 'active', 'demo_org_orbit', 'demo_session_04', '2026-07-02T09:03:00.000Z', '2026-07-18T10:03:00.000Z'),
-  ('demo_quest_archive', 'neighborhood-archive', 'Neighborhood Archive', 'Preserve fictional public-memory prompts with clear provenance and review.', 'A community Quest with no organization affiliation.', 'active', NULL, 'demo_session_05', '2026-07-02T09:04:00.000Z', '2026-07-18T10:04:00.000Z'),
-  ('demo_quest_food', 'table-commons', 'Table Commons', 'Collect fictional examples of resilient shared-meal infrastructure.', 'A community Quest with no organization affiliation.', 'active', NULL, 'demo_session_06', '2026-07-02T09:05:00.000Z', '2026-07-18T10:05:00.000Z'),
-  ('demo_quest_water', 'water-window', 'Water Window', 'Map fictional public questions about visible urban water systems.', 'A community Quest with no organization affiliation.', 'active', NULL, 'demo_session_07', '2026-07-02T09:06:00.000Z', '2026-07-18T10:06:00.000Z'),
-  ('demo_quest_tools', 'repair-atlas', 'Repair Atlas', 'Create a fictional public catalog of repair knowledge gaps.', 'A community Quest with no organization affiliation.', 'active', NULL, 'demo_session_08', '2026-07-02T09:07:00.000Z', '2026-07-18T10:07:00.000Z');
+  ('demo_quest_tide', 'tide-notes', 'Tide Notes', 'Build a fictional, source-backed guide to observing changing shoreline access.', 'Synthetic demo content about a fictional shoreline observation project.', 'active', 1, 'demo_org_lattice', 'demo_session_01', '2026-07-02T09:00:00.000Z', '2026-07-18T10:00:00.000Z'),
+  ('demo_quest_signal', 'signal-garden', 'Signal Garden', 'Create a fictional public map of low-power community signal experiments.', 'Synthetic demo content about small, public communication experiments.', 'active', 1, 'demo_org_moonwater', 'demo_session_02', '2026-07-02T09:01:00.000Z', '2026-07-18T10:01:00.000Z'),
+  ('demo_quest_steps', 'shared-steps', 'Shared Steps', 'Document fictional barriers and improvements in a neighborhood walking network.', 'Synthetic demo content about accessible public-space observations.', 'active', 1, 'demo_org_northwind', 'demo_session_03', '2026-07-02T09:02:00.000Z', '2026-07-18T10:02:00.000Z'),
+  ('demo_quest_air', 'open-air-ledger', 'Open Air Ledger', 'Compare fictional low-cost air observations with transparent public methods.', 'Synthetic demo content about reproducible local measurements.', 'active', 1, 'demo_org_orbit', 'demo_session_04', '2026-07-02T09:03:00.000Z', '2026-07-18T10:03:00.000Z'),
+  ('demo_quest_archive', 'neighborhood-archive', 'Neighborhood Archive', 'Preserve fictional public-memory prompts with clear provenance and review.', 'A community Quest with no organization affiliation.', 'active', 1, NULL, 'demo_session_05', '2026-07-02T09:04:00.000Z', '2026-07-18T10:04:00.000Z'),
+  ('demo_quest_food', 'table-commons', 'Table Commons', 'Collect fictional examples of resilient shared-meal infrastructure.', 'A community Quest with no organization affiliation.', 'active', 1, NULL, 'demo_session_06', '2026-07-02T09:05:00.000Z', '2026-07-18T10:05:00.000Z'),
+  ('demo_quest_water', 'water-window', 'Water Window', 'Map fictional public questions about visible urban water systems.', 'A community Quest with no organization affiliation.', 'active', 1, NULL, 'demo_session_07', '2026-07-02T09:06:00.000Z', '2026-07-18T10:06:00.000Z'),
+  ('demo_quest_tools', 'repair-atlas', 'Repair Atlas', 'Create a fictional public catalog of repair knowledge gaps.', 'A community Quest with no organization affiliation.', 'active', 1, NULL, 'demo_session_08', '2026-07-02T09:07:00.000Z', '2026-07-18T10:07:00.000Z');
+
+UPDATE quests
+SET is_demo = 1
+WHERE id IN (
+  'demo_quest_tide',
+  'demo_quest_signal',
+  'demo_quest_steps',
+  'demo_quest_air',
+  'demo_quest_archive',
+  'demo_quest_food',
+  'demo_quest_water',
+  'demo_quest_tools'
+);
 
 -- Forty-two Challenges: ten become awaiting review, seventeen resolve, three
 -- reopen after challenged history, and twelve remain open without a Contribution.

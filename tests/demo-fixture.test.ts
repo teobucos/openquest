@@ -22,11 +22,14 @@ const organizationMigrationProjection = `
   );
   ALTER TABLE quests
     ADD COLUMN primary_organization_id TEXT REFERENCES organizations(id);
+  ALTER TABLE quests
+    ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0 CHECK (is_demo IN (0, 1));
 `;
 
 test("the demo fixture declares and verifies its bounded organization and work-stream state", () => {
   expect(expectedState).toEqual({
     contributors: 12,
+    demo_quests: 8,
     fixture_version: 1,
     id_prefix: "demo_",
     organizations: 4,
@@ -74,6 +77,14 @@ test("the seed produces the planned D1 work-stream distribution after the organi
         .query("SELECT COUNT(*) AS count FROM events WHERE quest_id GLOB 'demo_quest_*'")
         .get(),
     ).toEqual({ count: 100 });
+    expect(
+      database
+        .query("SELECT COUNT(*) AS count FROM quests WHERE id GLOB 'demo_quest_*' AND is_demo = 1")
+        .get(),
+    ).toEqual({ count: 8 });
+    database.exec("UPDATE quests SET is_demo = 0 WHERE id = 'demo_quest_tide'");
+    database.exec(seed);
+    expect(database.query("SELECT is_demo FROM quests WHERE id = 'demo_quest_tide'").get()).toEqual({ is_demo: 1 });
   } finally {
     database.close();
   }

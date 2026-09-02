@@ -16,6 +16,9 @@ const assertionQuery = `
       WHERE id GLOB 'demo_quest_*') AS quests,
     (SELECT COUNT(*) FROM quests
       WHERE id GLOB 'demo_quest_*'
+        AND is_demo = 1) AS demo_quests,
+    (SELECT COUNT(*) FROM quests
+      WHERE id GLOB 'demo_quest_*'
         AND primary_organization_id GLOB 'demo_org_*') AS organization_quests,
     (SELECT COUNT(*) FROM challenges
       WHERE id GLOB 'demo_challenge_*'
@@ -45,6 +48,7 @@ const DemoAssertionsSchema = z
   .object({
     awaiting_review: z.number().int(),
     contributors: z.number().int(),
+    demo_quests: z.number().int(),
     open: z.number().int(),
     organization_quests: z.number().int(),
     organizations: z.number().int(),
@@ -69,6 +73,7 @@ const WranglerResponseSchema = z
 const expectedAssertions = {
   awaiting_review: 10,
   contributors: 12,
+  demo_quests: 8,
   open: 15,
   organization_quests: 4,
   organizations: 4,
