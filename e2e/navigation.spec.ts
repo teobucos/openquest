@@ -1,10 +1,27 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   CreateChallengeResponseSchema,
   CreateQuestResponseSchema,
   ObserveResponseSchema,
 } from "../src/contracts";
 import { installFakeWebMcp, registeredTools } from "./helpers";
+
+async function mockDemoQuestProjection(page: Page, community: boolean): Promise<void> {
+  await page.route("**/api/world*", async (route) => {
+    const response = await route.fetch();
+    const snapshot = ObserveResponseSchema.parse(await response.json());
+    const quest = snapshot.quests[0];
+    if (!quest) throw new Error("Expected a public Quest fixture.");
+    await route.fulfill({
+      body: JSON.stringify({
+        ...snapshot,
+        quests: [{ ...quest, is_demo: true, organization: community ? null : quest.organization }, ...snapshot.quests.slice(1)],
+      }),
+      contentType: "application/json; charset=utf-8",
+      status: response.status(),
+    });
+  });
+}
 
 test("the control center navigates scopes, filters, and inspectors without a document reload", async ({ page }) => {
   await page.goto("/");
@@ -110,33 +127,35 @@ test("the agent prompt is specific to the selected scope", async ({ page }) => {
 });
 
 test("synthetic Quest provenance is explicit on Quest cards and context", async ({ page }) => {
+  await mockDemoQuestProjection(page, false);
   await page.goto("/");
   const demoQuest = page.locator(".quest-row").filter({ hasText: "DEMO ·" }).first();
   await expect(demoQuest).toBeVisible();
+  const demoHref = await demoQuest.getAttribute("href");
+  if (!demoHref) throw new Error("Expected the demo Quest link to have a public href.");
+  const demoSnapshot = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/world" && url.searchParams.get("quest_slug") === demoHref.slice("/q/".length);
+  });
   await demoQuest.click();
+  await demoSnapshot;
   await expect(page.locator(".scope-provenance")).toContainText("DEMO ·");
   await expect(page.locator(".quest-context-panel .panel-heading")).toContainText("DEMO");
 });
 
 test("a synthetic community Quest presents explicit demo provenance", async ({ page }) => {
-  await page.route("**/api/world*", async (route) => {
-    const response = await route.fetch();
-    const snapshot = ObserveResponseSchema.parse(await response.json());
-    const quest = snapshot.quests[0];
-    if (!quest) throw new Error("Expected a public Quest fixture.");
-    await route.fulfill({
-      body: JSON.stringify({
-        ...snapshot,
-        quests: [{ ...quest, is_demo: true, organization: null }, ...snapshot.quests.slice(1)],
-      }),
-      contentType: "application/json; charset=utf-8",
-      status: response.status(),
-    });
-  });
+  await mockDemoQuestProjection(page, true);
   await page.goto("/");
   const communityDemo = page.locator(".quest-row").first();
   await expect(communityDemo).toContainText("DEMO ·");
+  const communityHref = await communityDemo.getAttribute("href");
+  if (!communityHref) throw new Error("Expected the community demo Quest link to have a public href.");
+  const communitySnapshot = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/world" && url.searchParams.get("quest_slug") === communityHref.slice("/q/".length);
+  });
   await communityDemo.click();
+  await communitySnapshot;
   await expect(page.locator(".scope-provenance")).toContainText("DEMO · COMMUNITY QUEST");
 });
 
