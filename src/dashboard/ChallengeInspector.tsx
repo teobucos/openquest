@@ -43,10 +43,6 @@ export function ChallengeInspector({
   const onCloseRef = useRef(onClose);
   const request = useCallback(() => getChallenge(challengeId), [challengeId]);
   const { data, error, loading, reload } = useRemoteData(request);
-  const close = useCallback(() => {
-    inspector.current?.close();
-    onCloseRef.current();
-  }, []);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -54,16 +50,24 @@ export function ChallengeInspector({
 
   useEffect(() => {
     const dialog = inspector.current;
-    if (!dialog || dialog.open) return;
-    dialog.showModal();
+    if (!dialog) return;
+    const closeOnBackdrop = (event: globalThis.MouseEvent) => {
+      if (event.target !== dialog) return;
+      dialog.close();
+      onCloseRef.current();
+    };
+    dialog.addEventListener("click", closeOnBackdrop);
+    if (!dialog.open) dialog.showModal();
     return () => {
+      dialog.removeEventListener("click", closeOnBackdrop);
       if (dialog.open) dialog.close();
     };
-  }, [close]);
+  }, []);
 
-  const closeOnBackdrop = useCallback((event: MouseEvent<HTMLDialogElement>) => {
-    if (event.target === event.currentTarget) close();
-  }, [close]);
+  const close = useCallback(() => {
+    inspector.current?.close();
+    onCloseRef.current();
+  }, []);
 
   const closeOnCancel = useCallback((event: SyntheticEvent<HTMLDialogElement>) => {
     event.preventDefault();
@@ -71,10 +75,10 @@ export function ChallengeInspector({
   }, [close]);
 
   return createPortal(
-    <dialog ref={inspector} className="challenge-inspector" aria-label="Challenge inspector" onCancel={closeOnCancel} onClick={closeOnBackdrop}>
+    <dialog ref={inspector} className="challenge-inspector" aria-label="Challenge inspector" onCancel={closeOnCancel}>
       <div className="inspector-heading">
         <span>CHALLENGE INSPECTOR</span>
-        <button autoFocus className="icon-button" type="button" onClick={onClose} aria-label="Close Challenge inspector">×</button>
+        <button autoFocus className="icon-button" type="button" onClick={close} aria-label="Close Challenge inspector">×</button>
       </div>
       {loading && !data ? <p className="empty-copy">Loading public Challenge history…</p> : null}
       {error && !data ? <div className="error-panel"><p>{error}</p><button type="button" onClick={reload}>Try again</button></div> : null}

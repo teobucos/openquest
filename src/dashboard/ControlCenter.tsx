@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type FormEvent,
@@ -48,19 +49,23 @@ function streamLabel(state: ObserveResponse["work_stream"][number]["stream_state
 }
 
 interface CanonicalHighlights {
-  readonly changedChallengeIds: readonly string[];
+  readonly changedChallengeIds: ReadonlySet<string>;
   readonly latestEventSequence: number | null;
   readonly latestSequence: number | null;
 }
 
 const noHighlights: CanonicalHighlights = {
-  changedChallengeIds: [],
+  changedChallengeIds: new Set(),
   latestEventSequence: null,
   latestSequence: null,
 };
 
+function highlightsReducer(_current: CanonicalHighlights, next: CanonicalHighlights): CanonicalHighlights {
+  return next;
+}
+
 function useCanonicalHighlights(data: ObserveResponse): CanonicalHighlights {
-  const [highlights, setHighlights] = useState<CanonicalHighlights>(noHighlights);
+  const [highlights, setHighlights] = useReducer(highlightsReducer, noHighlights);
   const previous = useRef<ObserveResponse | null>(null);
   const clearTimer = useRef<number | undefined>(undefined);
 
@@ -76,12 +81,13 @@ function useCanonicalHighlights(data: ObserveResponse): CanonicalHighlights {
     const precedingStates = new Map(
       preceding.work_stream.map((item) => [item.challenge.id, item.stream_state]),
     );
-    const changedChallengeIds = data.work_stream
-      .filter((item) => {
-        const previousState = precedingStates.get(item.challenge.id);
-        return previousState !== undefined && previousState !== item.stream_state;
-      })
-      .map((item) => item.challenge.id);
+    const changedChallengeIds = new Set<string>();
+    for (const item of data.work_stream) {
+      const previousState = precedingStates.get(item.challenge.id);
+      if (previousState !== undefined && previousState !== item.stream_state) {
+        changedChallengeIds.add(item.challenge.id);
+      }
+    }
     const latestEventSequence = data.activity[0]?.sequence ?? null;
     if (clearTimer.current !== undefined) window.clearTimeout(clearTimer.current);
     setHighlights({
@@ -120,8 +126,9 @@ function CreateQuestForm({ onCreated }: { onCreated: (slug: string) => void }) {
         description: String(fields.get("description") ?? ""),
       });
       onCreated(result.slug);
-    } catch (cause) {
+    } catch (cause: unknown) {
       setMessage(readableError(cause));
+    } finally {
       setSubmitting(false);
     }
   }
@@ -201,7 +208,7 @@ export function ControlCenter({
             </div>
             <div className="work-stream" aria-live="polite">
               {visibleWork.map((item) => (
-                <button className={`work-row${highlights.changedChallengeIds.includes(item.challenge.id) ? " is-fresh" : ""}`} type="button" key={`${item.stream_state}-${item.challenge.id}`} data-state={item.stream_state} onClick={() => navigate(scopeRoute({ challengeId: item.challenge.id }))}>
+                <button className={`work-row${highlights.changedChallengeIds.has(item.challenge.id) ? " is-fresh" : ""}`} type="button" key={`${item.stream_state}-${item.challenge.id}`} data-state={item.stream_state} onClick={() => navigate(scopeRoute({ challengeId: item.challenge.id }))}>
                   <span className="work-state">{streamLabel(item.stream_state)}</span>
                   <span className="work-copy"><strong>{item.challenge.title}</strong>{route.scope.kind === "network" ? <span className="work-quest-title">{demoPrefix(item.quest)}{item.quest.title}</span> : null}<span className="work-challenge-description">{item.challenge.description}</span>{item.contribution ? <small>{item.stream_state === "resolved" ? "RESULT: " : "CONTRIBUTION: "}{item.contribution.summary}</small> : null}</span>
                   <time dateTime={item.stream_state === "resolved" ? item.challenge.updated_at : item.challenge.created_at}>{timestamp(item.stream_state === "resolved" ? item.challenge.updated_at : item.challenge.created_at)}</time>

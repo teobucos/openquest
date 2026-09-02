@@ -54,54 +54,41 @@ function dispatchSnapshotInvalidation(): void {
   window.dispatchEvent(new Event(OPENQUEST_CHANGED_EVENT));
 }
 
-export function useLiveUpdates({
-  lastSequence,
-  scope,
-}: UseLiveUpdatesOptions): LiveConnectionStatus {
-  const [status, setStatus] = useState<LiveConnectionStatus>("connecting");
-  const scopeKey = scopeKeyFor(scope);
-  const appliedSequences = useRef(new Map<string, number>());
-  const targetSequences = useRef(new Map<string, number>());
-  const lifecycle = useRef<ScopeLifecycle | null>(null);
+interface LiveSessionOptions {
+  appliedSequences: { current: Map<string, number> };
+  lifecycle: { current: ScopeLifecycle | null };
+  scopeKey: string;
+  setStatus: (status: LiveConnectionStatus) => void;
+  targetSequences: { current: Map<string, number> };
+}
 
-  useEffect(() => {
-    const applied = Math.max(appliedSequences.current.get(scopeKey) ?? 0, lastSequence);
-    appliedSequences.current.set(scopeKey, applied);
-    const target = Math.max(targetSequences.current.get(scopeKey) ?? 0, applied);
-    targetSequences.current.set(scopeKey, target);
-    if (lifecycle.current?.scopeKey === scopeKey) lifecycle.current.reconcile();
-  }, [lastSequence, scopeKey]);
+function createLiveSession({
+  appliedSequences,
+  lifecycle,
+  scopeKey,
+  setStatus,
+  targetSequences,
+}: LiveSessionOptions): () => void {
+  let active = true;
+  let socket: WebSocket | null = null;
+  let reconnectTimer: number | undefined;
+  let degradedTimer: number | undefined;
+  let fallbackTimer: number | undefined;
+  let catchUpTimer: number | undefined;
+  let reconcile: (() => void) | undefined;
+  let socketOpenListener: (() => void) | undefined;
+  let socketMessageListener: ((event: MessageEvent) => void) | undefined;
+  let socketCloseListener: (() => void) | undefined;
+  let socketErrorListener: (() => void) | undefined;
 
-  useEffect(() => {
-    let active = true;
-    let socket: WebSocket | null = null;
-    let reconnectTimer: number | undefined;
-    let degradedTimer: number | undefined;
-    let fallbackTimer: number | undefined;
-    let catchUpTimer: number | undefined;
-    let reconcile: (() => void) | undefined;
-
-    const cleanup = () => {
-      active = false;
-      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
-      if (degradedTimer !== undefined) window.clearTimeout(degradedTimer);
-      if (fallbackTimer !== undefined) window.clearInterval(fallbackTimer);
-      if (catchUpTimer !== undefined) window.clearTimeout(catchUpTimer);
-      if (reconcile && lifecycle.current?.reconcile === reconcile) lifecycle.current = null;
-      socket?.close();
-    };
-    const activeScope = scopeForKey(scopeKey);
-    if (!activeScope) {
-      lifecycle.current = null;
-      setStatus("connecting");
-      return cleanup;
-    }
-    if (typeof WebSocket === "undefined") {
-      setStatus("degraded");
-      fallbackTimer = window.setInterval(dispatchSnapshotInvalidation, FALLBACK_REFRESH_MS);
-      return cleanup;
-    }
-
+  const activeScope = scopeForKey(scopeKey);
+  if (!activeScope) {
+    lifecycle.current = null;
+    setStatus("connecting");
+  } else if (typeof WebSocket === "undefined") {
+    setStatus("degraded");
+    fallbackTimer = window.setInterval(dispatchSnapshotInvalidation, FALLBACK_REFRESH_MS);
+  } else {
     let attempt = 0;
     let catchUpAttempt = 0;
 
@@ -163,23 +150,23 @@ export function useLiveUpdates({
       if (!active) return;
       setStatus(attempt === 0 ? "connecting" : "reconnecting");
       startDisconnectedTimers();
-      const currentSocket = new WebSocket(socketUrl(activeScope));
-      socket = currentSocket;
-      currentSocket.addEventListener("open", () => {
+      socket = new WebSocket(socketUrl(activeScope));
+      const currentSocket = socket;
+      socketOpenListener = () => {
         if (!active || socket !== currentSocket || currentSocket.readyState !== WebSocket.OPEN) return;
         attempt = 0;
         clearDisconnectedTimers();
         setStatus("live");
         dispatchSnapshotInvalidation();
         reconcileCurrentScope();
-      });
-      currentSocket.addEventListener("message", (event) => {
+      };
+      socketMessageListener = (event) => {
         if (!active || socket !== currentSocket || typeof event.data !== "string") return;
         const message = parseLiveInvalidation(event.data);
         if (!message) return;
         announceTarget(message.latest_sequence);
-      });
-      currentSocket.addEventListener("close", () => {
+      };
+      socketCloseListener = () => {
         if (!active || socket !== currentSocket) return;
         setStatus("reconnecting");
         startDisconnectedTimers();
@@ -188,15 +175,61 @@ export function useLiveUpdates({
           attempt += 1;
           connect();
         }, reconnectDelay(attempt));
-      });
-      currentSocket.addEventListener("error", () => currentSocket.close());
+      };
+      socketErrorListener = () => currentSocket.close();
+      currentSocket.addEventListener("open", socketOpenListener);
+      currentSocket.addEventListener("message", socketMessageListener);
+      currentSocket.addEventListener("close", socketCloseListener);
+      currentSocket.addEventListener("error", socketErrorListener);
     };
 
     reconcile = reconcileCurrentScope;
     lifecycle.current = { reconcile: reconcileCurrentScope, scopeKey };
     connect();
-    return cleanup;
-  }, [scopeKey]);
+  }
+
+  return () => {
+    active = false;
+    if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
+    if (degradedTimer !== undefined) window.clearTimeout(degradedTimer);
+    if (fallbackTimer !== undefined) window.clearInterval(fallbackTimer);
+    if (catchUpTimer !== undefined) window.clearTimeout(catchUpTimer);
+    if (reconcile && lifecycle.current?.reconcile === reconcile) lifecycle.current = null;
+    if (socket) {
+      if (socketOpenListener) socket.removeEventListener("open", socketOpenListener);
+      if (socketMessageListener) socket.removeEventListener("message", socketMessageListener);
+      if (socketCloseListener) socket.removeEventListener("close", socketCloseListener);
+      if (socketErrorListener) socket.removeEventListener("error", socketErrorListener);
+      socket.close();
+    }
+  };
+}
+
+export function useLiveUpdates({
+  lastSequence,
+  scope,
+}: UseLiveUpdatesOptions): LiveConnectionStatus {
+  const [status, setStatus] = useState<LiveConnectionStatus>("connecting");
+  const scopeKey = scopeKeyFor(scope);
+  const appliedSequences = useRef(new Map<string, number>());
+  const targetSequences = useRef(new Map<string, number>());
+  const lifecycle = useRef<ScopeLifecycle | null>(null);
+
+  useEffect(() => {
+    const applied = Math.max(appliedSequences.current.get(scopeKey) ?? 0, lastSequence);
+    appliedSequences.current.set(scopeKey, applied);
+    const target = Math.max(targetSequences.current.get(scopeKey) ?? 0, applied);
+    targetSequences.current.set(scopeKey, target);
+    if (lifecycle.current?.scopeKey === scopeKey) lifecycle.current.reconcile();
+  }, [lastSequence, scopeKey]);
+
+  useEffect(() => createLiveSession({
+    appliedSequences,
+    lifecycle,
+    scopeKey,
+    setStatus,
+    targetSequences,
+  }), [scopeKey]);
 
   return status;
 }

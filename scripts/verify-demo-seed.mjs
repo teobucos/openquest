@@ -44,8 +44,7 @@ const assertionQuery = `
       WHERE quest_id GLOB 'demo_quest_*') AS public_events
 `;
 
-const DemoAssertionsSchema = z
-  .object({
+const DemoAssertionsSchema = z.strictObject({
     awaiting_review: z.number().int(),
     contributors: z.number().int(),
     demo_quests: z.number().int(),
@@ -56,17 +55,14 @@ const DemoAssertionsSchema = z
     quests: z.number().int(),
     reopened_history: z.number().int(),
     resolved: z.number().int(),
-  })
-  .strict();
+});
 
 const WranglerResponseSchema = z
   .array(
-    z
-      .object({
-        results: z.array(DemoAssertionsSchema).length(1),
-        success: z.literal(true),
-      })
-      .passthrough(),
+    z.looseObject({
+      results: z.array(DemoAssertionsSchema).length(1),
+      success: z.literal(true),
+    }),
   )
   .length(1);
 
