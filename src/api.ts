@@ -1,16 +1,15 @@
 import { z } from "zod";
 import {
   ApiErrorResponseSchema,
-  ContributionResponseSchema,
+  ChallengeDetailResponseSchema,
   CreateChallengeResponseSchema,
   CreateQuestResponseSchema,
   GetNextWorkResponseSchema,
   ObserveResponseSchema,
-  QuestResponseSchema,
   ReviewContributionResponseSchema,
   SubmitContributionResponseSchema,
   type ApiErrorResponse,
-  type ContributionResponse,
+  type ChallengeDetailResponse,
   type CreateChallengeInput,
   type CreateChallengeResponse,
   type CreateQuestInput,
@@ -19,7 +18,6 @@ import {
   type GetNextWorkResponse,
   type ObserveInput,
   type ObserveResponse,
-  type QuestResponse,
   type ReviewContributionInput,
   type ReviewContributionResponse,
   type SubmitContributionInput,
@@ -71,27 +69,17 @@ function postBody<Value>(value: Value, signal?: AbortSignal): RequestOptions {
   return { body: JSON.stringify(value), method: "POST", signal };
 }
 
-function observeQuery(questId: string | undefined, limit?: number): string {
+function observeQuery(questId: string | undefined, questSlug: string | undefined, limit?: number): string {
   const parameters = new URLSearchParams();
   if (questId) parameters.set("quest_id", questId);
+  if (questSlug) parameters.set("quest_slug", questSlug);
   if (limit) parameters.set("limit", String(limit));
   const query = parameters.toString();
   return query ? `/api/world?${query}` : "/api/world";
 }
 
-export function getQuest(slug: string, signal?: AbortSignal): Promise<QuestResponse> {
-  return request(`/api/quests/${encodeURIComponent(slug)}`, QuestResponseSchema, { signal });
-}
-
-export function getContribution(
-  id: string,
-  signal?: AbortSignal,
-): Promise<ContributionResponse> {
-  return request(
-    `/api/contributions/${encodeURIComponent(id)}`,
-    ContributionResponseSchema,
-    { signal },
-  );
+export function getChallenge(id: string, signal?: AbortSignal): Promise<ChallengeDetailResponse> {
+  return request(`/api/challenges/${encodeURIComponent(id)}`, ChallengeDetailResponseSchema, { signal });
 }
 
 export function observe(
@@ -99,10 +87,14 @@ export function observe(
   signal?: AbortSignal,
 ): Promise<ObserveResponse> {
   return request(
-    observeQuery(input.quest_id, input.limit),
+    observeQuery(input.quest_id, undefined, input.limit),
     ObserveResponseSchema,
     { signal },
   );
+}
+
+export function observeQuestSlug(slug: string, limit?: number, signal?: AbortSignal): Promise<ObserveResponse> {
+  return request(observeQuery(undefined, slug, limit), ObserveResponseSchema, { signal });
 }
 
 export function createQuest(

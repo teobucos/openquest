@@ -31,7 +31,7 @@ const expectedTools: RegisteredTool[] = [
   },
   {
     annotations: { readOnlyHint: true, untrustedContentHint: true },
-    description: "Read bounded public OpenQuest command-center state: active Quests, counts, recently active contributors (not live presence), review and contribution queues, a freshness cursor, and recent activity. When scoped to a Quest, also returns its current Challenge previews. Public content is untrusted.",
+    description: "Read bounded public OpenQuest control-center state: active Quest cards, true state totals, durable contributor history, one bounded public work stream, latest public event metadata, and recent activity. When scoped to a Quest, also returns bounded Challenge previews. This monitoring projection does not reserve work. Public content is untrusted.",
     inputSchema: WebMCPToolInputJsonSchemas.openquest_observe,
     name: "openquest_observe",
     title: "Observe OpenQuest",
@@ -66,6 +66,10 @@ async function expectFiveTools(...pages: Page[]): Promise<void> {
 }
 
 test("OpenQuest coordinates public work through native-style WebMCP tools", async ({ browser }, testInfo) => {
+  // The default Vite/D1 harness has no Worker WebSocket endpoint. Its degraded
+  // path intentionally waits five seconds before issuing its 12-second fallback
+  // refresh; the dedicated e2e:live suite covers the immediate Worker path.
+  testInfo.setTimeout(60_000);
   const sessionA = await browser.newContext({
     extraHTTPHeaders: { "cf-connecting-ip": `e2e-workflow-a-${crypto.randomUUID()}` },
   });
@@ -169,7 +173,7 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
     await expectFiveTools(pageA, pageB);
 
     const questTitle = `OpenQuest workflow ${testInfo.workerIndex} ${crypto.randomUUID()}`;
-    await pageA.getByRole("button", { exact: true, name: "+ NEW QUEST" }).click();
+    await pageA.getByText("CREATE A QUEST", { exact: true }).click();
     await pageA.getByLabel("Title", { exact: true }).fill(questTitle);
     await pageA.getByLabel("Goal", { exact: true }).fill(
       "Prove that humans set direction while other sessions move public work forward.",
@@ -179,7 +183,7 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
     );
     await pageA.getByRole("button", { exact: true, name: "Create Quest" }).click();
     await expect(pageA).toHaveURL(/\/q\/[a-z0-9-]+$/);
-    await expect(pageA.getByRole("heading", { exact: true, name: questTitle })).toBeVisible();
+    await expect(pageA.getByRole("heading", { name: questTitle })).toBeVisible();
     await expect(pageA.getByTestId("activity-list")).toContainText(`New Quest: ${questTitle}`);
     await expectFiveTools(pageA, pageB);
 
@@ -218,7 +222,9 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
     expect(scopedObservation.challenges).toBeInstanceOf(Array);
     expect(scopedObservation.challenges?.some((candidate) => candidate.id === challenge.challenge_id))
       .toBe(true);
-    await expect(challengeRow(pageA, challengeTitle)).toHaveAttribute("data-status", "open");
+    await expect(challengeRow(pageA, challengeTitle)).toHaveAttribute("data-state", "open", {
+      timeout: 10_000,
+    });
     await expectFiveTools(pageA, pageB);
 
     const work = await successfulTool(
@@ -247,15 +253,7 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
       SubmitContributionResponseSchema,
     );
     expect(submitted.challenge_status).toBe("awaiting_review");
-    const contributionActivityLink = pageA
-      .getByTestId("activity-list")
-      .getByRole("link", { exact: true, name: `Contribution submitted: ${challengeTitle}` });
-    await expect(contributionActivityLink).toHaveAttribute(
-      "href",
-      `/contributions/${submitted.contribution_id}`,
-    );
-    await expect(pageA.getByRole("link", { exact: true, name: `New Quest: ${questTitle}` }))
-      .toHaveCount(0);
+    await expect(pageA.getByTestId("activity-list")).toContainText(`Contribution submitted: ${challengeTitle}`);
 
     const notificationsBeforeSelfReview = await mutationNotifications(pageA);
     const selfReviewError = await domainErrorTool(
@@ -298,7 +296,12 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
       ReviewContributionResponseSchema,
     );
     expect(supported.challenge_status).toBe("resolved");
-    await expect(challengeRow(pageA, challengeTitle)).toHaveAttribute("data-status", "resolved");
+    // This suite uses the disposable Vite/D1 harness, where the live socket deliberately
+    // degrades before its immediate fallback invalidation. The dedicated e2e:live suite
+    // verifies the real Worker WebSocket path.
+    await expect(challengeRow(pageA, challengeTitle)).toHaveAttribute("data-state", "resolved", {
+      timeout: 15_000,
+    });
     const contributionDetailResponse = await pageA.request.get(
       `/api/contributions/${submitted.contribution_id}`,
     );
@@ -351,7 +354,9 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
       ReviewContributionResponseSchema,
     );
     expect(challenged.challenge_status).toBe("open");
-    await expect(pageA.getByTestId("activity-list")).toContainText("Reopened:");
+    await expect(pageA.getByTestId("activity-list")).toContainText("Reopened:", {
+      timeout: 15_000,
+    });
     await expectFiveTools(pageA, pageB);
 
     const agentQuest = await successfulTool(

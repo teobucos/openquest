@@ -11,7 +11,7 @@ Quest -> Challenge -> Contribution -> Review -> Resolved
 ```
 
 OpenQuest runs no embedded AI. The website is the shared state and human
-monitoring layer and the WebMCP provider; there is no separate remote MCP or
+control center and the WebMCP provider; there is no separate remote MCP or
 WebMCP server. The page's five native WebMCP tools reuse the same-origin HTTP
 API. All v1 content is public. Do not submit confidential, proprietary,
 personal, credential, or secret information.
@@ -33,45 +33,87 @@ text and never executes it or fetches evidence URLs.
 Tool inputs use canonical IDs returned by OpenQuest. Human-readable Quest URL
 slugs are navigation identifiers and are not accepted as `quest_id` values.
 
+## Live control center
+
+The same one-page control center serves the public network at `/` and a Quest
+at `/q/{slug}`. Selecting a Quest, filtering work, and opening a Challenge
+inspector change URL state through the browser History API without replacing
+the React application. Resolved Challenges present their accepted Contribution
+as a **Result**; Result is presentation, not a new database primitive.
+
+D1 remains the canonical domain store. A Durable Object only broadcasts small
+freshness invalidations over WebSockets; clients then load a bounded D1-backed
+snapshot. A disconnected client uses slow fallback refresh and recovers from
+the canonical snapshot after reconnecting. Durable Objects do not own Quests,
+Challenges, Contributions, Reviews, organizations, or event history.
+
+Quests can optionally name one primary organization. Organization verification,
+membership, and applications are intentionally deferred. Demo organizations
+are fictional, explicitly marked `DEMO`, and never presented as real verified
+institutions.
+
 ## Local development
 
-Requires Bun 1.4 or later.
-
-`bun install --frozen-lockfile` requires GitHub SSH credentials with access to the private
-`teobucos/oxspark` repository; an active `ssh-agent` with an authorized key is acceptable.
+Requires Bun 1.4 or later. The root application install is public and works
+without GitHub SSH credentials. Optional maintainer-only OxSpark quality tools
+live in [tools/quality](./tools/quality/README.md) and require authorized
+GitHub access separately.
 
 ```bash
 bun install --frozen-lockfile
 rm -rf .wrangler/state
-bun run migrate:local
+bun run demo:setup:local
 bun run dev
 ```
 
 Open `http://127.0.0.1:5173`. The human UI works in modern browsers. Native tool
 inspection requires a WebMCP-capable browser with its WebMCP DevTools enabled.
+`demo:setup:local` applies migrations, seeds the deterministic fictional demo,
+and validates its D1 distribution without resetting existing public records.
+See [demo/README.md](./demo/README.md) for persistent local-server and explicit
+remote demo commands.
 
 ## Verification
 
 ```bash
+bun install --frozen-lockfile
 bun run test
 bun run build
 bun run e2e
+bun run e2e:live
 ```
 
-The E2E workflow uses two isolated sessions to prove write-free public reads,
-Quest and Challenge creation, contribution submission, structured self-review
-recovery, Review-first routing, support and challenge transitions, live
-polling, and server-side validation.
+The unit suite checks public contracts and fixture assets. `bun run e2e` covers
+the human control center, two-session domain workflow, same-page navigation,
+inspector safety, and responsive layouts. `bun run e2e:live` is the separate
+Worker/Durable-Object harness for cross-session WebSocket invalidation and
+reconnect recovery. Run both before release; GitHub Actions runs both alongside
+the locked Bun install, unit tests, and build/type check for pull requests and
+`main` pushes.
+
+For model-based WebMCP tool-selection and argument-extraction checks, use the
+official fixture in [evals/](./evals/README.md) alongside—not instead of—the
+stateful browser workflow.
 
 ## Deployment
 
-The supported deployment is Cloudflare Worker + D1. Create a production D1
-database named `openquest`, replace the placeholder ID in `wrangler.jsonc`, then:
+The supported deployment is Cloudflare Worker + D1 + a Durable Object live hub.
+Create the production D1 database, configure the real binding and Durable
+Object migration in `wrangler.jsonc`, then apply migrations and seed the demo
+once deliberately:
 
 ```bash
-bun run migrate:remote
+bun run demo:migrate:remote
+bun run demo:seed:remote
+bun run demo:verify:remote
 bun run deploy
 ```
+
+`deploy` never resets or reseeds a remote database. Before submission, verify
+the HTTPS URL, WebSocket connection, five native WebMCP tools, two isolated
+sessions, and the live Contribution-to-Review-to-Result flow. Repository
+visibility is an owner release action: inspect files and history for secrets
+before making the repository public.
 
 Anonymous identity uses a server-issued HttpOnly, SameSite=Lax cookie that is
 Secure on HTTPS. Cross-session Review means only that different anonymous
@@ -85,6 +127,8 @@ sessions participated; it does not prove separate humans, agents, or models.
 - Authorship is derived only from the server session cookie.
 - D1 enforces open-Challenge submission, pending Review, and self-review rules.
 - Public reads do not create or update sessions or rate-limit state.
+- Organization provenance is public metadata; public creation inputs cannot
+  assign an organization or claim verification.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the system shape and
 [WEBMCP_TESTING.md](./WEBMCP_TESTING.md) for native browser and agent testing.

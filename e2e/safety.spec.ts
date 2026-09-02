@@ -18,13 +18,13 @@ import {
 test("home explains unsupported WebMCP and an empty active Quest list", async ({ page }) => {
   await page.route("**/api/world*", (route) => route.fulfill({
     body: JSON.stringify({
-      active_agents: 0,
       activity: [],
-      freshness: { last_sequence: 0, server_time: "2026-08-30T12:00:00.000Z" },
+      contributor_count: 0,
+      freshness: { event_count: 0, last_sequence: 0, server_time: "2026-08-30T12:00:00.000Z" },
       quests: [],
-      recent_agents: [],
+      recent_contributors: [],
       totals: { awaiting_review: 0, open: 0, resolved: 0 },
-      work_queues: { open: [], review: [] },
+      work_stream: [],
     }),
     contentType: "application/json",
     status: 200,
@@ -33,12 +33,12 @@ test("home explains unsupported WebMCP and an empty active Quest list", async ({
   await page.goto("/");
   await expect(page.getByText("WebMCP · browser unsupported", { exact: true })).toBeVisible();
   const emptyQuestCopy = page.getByText(
-    "No active Quests. Open the creation panel to establish public direction.",
+    "No active Quests.",
     { exact: true },
   );
   await expect(emptyQuestCopy).toBeVisible();
   expect(await emptyQuestCopy.innerText()).toBe(
-    "No active Quests. Open the creation panel to establish public direction.",
+    "No active Quests.",
   );
 });
 
@@ -89,6 +89,52 @@ test("OpenQuest keeps public reads inert and returns invalid tool input as struc
   expect(issuedCookie).toContain("HttpOnly");
   expect(issuedCookie).toContain("SameSite=Lax");
   expect(issuedCookie).toContain("Secure");
+  const secureQuest = CreateQuestResponseSchema.parse(await secureWrite.json());
+
+  const readableChallengeResponse = await request.post("/api/challenges", {
+    data: {
+      description: "Create public read coverage for a Challenge detail endpoint without issuing a read cookie.",
+      quest_id: secureQuest.quest_id,
+      title: "Public read-only Challenge",
+    },
+  });
+  expect(readableChallengeResponse.status()).toBe(201);
+  const readableChallenge = CreateChallengeResponseSchema.parse(await readableChallengeResponse.json());
+  const readableContributionResponse = await request.post("/api/contributions", {
+    data: {
+      challenge_id: readableChallenge.challenge_id,
+      content: "Create one public Contribution so its detail read can prove it never initializes a session.",
+      summary: "Public detail read fixture.",
+    },
+  });
+  expect(readableContributionResponse.status()).toBe(201);
+  const readableContribution = SubmitContributionResponseSchema.parse(
+    await readableContributionResponse.json(),
+  );
+
+  const directPublicReads = await Promise.all([
+    request.get(`/api/challenges/${readableChallenge.challenge_id}`),
+    request.get(`/api/quests/${secureQuest.slug}`),
+    request.get(`/api/contributions/${readableContribution.contribution_id}`),
+    request.get("/api/live"),
+    request.get("/api/live?quest_id=not%20a%20canonical%20id"),
+    request.post("/api/live"),
+  ]);
+  expect(directPublicReads.map((response) => response.status())).toEqual([200, 200, 200, 426, 426, 405]);
+  for (const response of directPublicReads) {
+    expect(response.headers()["set-cookie"]).toBeUndefined();
+  }
+
+  const malformedIdentifierReads = await Promise.all([
+    request.get("/api/challenges/%"),
+    request.get("/api/quests/%"),
+    request.get("/api/contributions/%"),
+  ]);
+  for (const response of malformedIdentifierReads) {
+    expect(response.status()).toBe(400);
+    expect(ApiErrorResponseSchema.parse(await response.json()).status).toBe("invalid_input");
+    expect(response.headers()["set-cookie"]).toBeUndefined();
+  }
 
   const session = await browser.newContext({
     extraHTTPHeaders: { "cf-connecting-ip": `e2e-safety-${crypto.randomUUID()}` },
@@ -114,7 +160,7 @@ test("OpenQuest keeps public reads inert and returns invalid tool input as struc
     );
     await page.goto("/q/accessible-hcmc");
     await expect(challengeRow(page, title)).toBeVisible();
-    await expect(page.locator("article.challenge-row script")).toHaveCount(0);
+    await expect(page.locator(".work-row script")).toHaveCount(0);
     await expect(page.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
 
     for (const url of ["javascript:alert(1)", "data:text/plain,unsafe", "file:///tmp/unsafe"]) {
@@ -292,8 +338,8 @@ test("Quest previews stay bounded and omit full Contribution work", async ({ bro
       {
         name: "openquest_propose",
         input: {
-          description: "A Quest used to verify bounded Challenge previews and compact polling payloads.",
-          goal: "Verify that monitoring remains correct and compact after more than one hundred Challenges.",
+          description: "A Quest used to verify bounded Challenge previews and monitoring projections.",
+          goal: "Verify that the bounded monitoring projection remains correct after more than one hundred Challenges.",
           kind: "quest",
           title: questTitle,
         },
@@ -335,16 +381,16 @@ test("Quest previews stay bounded and omit full Contribution work", async ({ bro
     const detailResponse = await ownerPage.request.get(`/api/quests/${createdQuest.slug}`);
     expect(detailResponse.status()).toBe(200);
     const detail = QuestResponseSchema.parse(await detailResponse.json());
-    expect(detail.challenges).toHaveLength(100);
+    expect(detail.challenges).toHaveLength(30);
     expect(detail.counts.open + detail.counts.awaiting_review + detail.counts.resolved).toBe(101);
 
     const observeResponse = await ownerPage.request.get(`/api/world?quest_id=${createdQuest.quest_id}`);
     expect(observeResponse.status()).toBe(200);
     const observed = ObserveResponseSchema.parse(await observeResponse.json());
-    expect(observed.challenges).toHaveLength(100);
-    expect(observed.work_queues.review).toHaveLength(10);
-    expect(observed.work_queues.open).toHaveLength(1);
-    expect(observed.recent_agents).toHaveLength(10);
+    expect(observed.challenges).toHaveLength(30);
+    expect(observed.work_stream.filter((item) => item.stream_state === "review")).toHaveLength(10);
+    expect(observed.work_stream.filter((item) => item.stream_state === "open")).toHaveLength(1);
+    expect(observed.recent_contributors).toHaveLength(10);
     expect(observed.freshness.last_sequence).toBe(observed.activity[0]?.sequence);
     expect(new Date(observed.freshness.server_time).getTime()).not.toBeNaN();
     for (const event of observed.activity) {

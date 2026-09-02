@@ -42,9 +42,9 @@ The Chrome testing flag is not a requirement for ChatGPT or Codex browser
 surfaces. For any hosted test, use an HTTPS URL and a browser or agent surface
 that exposes WebMCP.
 
-OpenQuest is a client-rendered polling application. Managed browser harnesses
-should treat visible `OPENQUEST`, a populated `#root`, or successful tool
-discovery as the readiness condition instead of waiting for a prolonged
+OpenQuest is a client-rendered live control center. Managed browser harnesses
+should treat visible control-center content, a populated `#root`, or successful
+tool discovery as the readiness condition instead of waiting for a prolonged
 network-idle period. The initial HTML includes a loading shell so snapshots
 taken before React mounts are still meaningful.
 
@@ -64,15 +64,18 @@ openquest_submit
 
 Successful mutation tools invalidate the visible route and wait for its refresh
 attempt to commit in React before returning their tool result. If an
-invalidation arrives while a polling request is already in flight, OpenQuest
+invalidation arrives while a snapshot request is already in flight, OpenQuest
 queues one follow-up request instead of dropping the invalidation. This keeps a
 stale response from winning the race against a just-completed mutation. If that
 follow-up request fails, the route commits its degraded-connection state without
 turning an already successful public mutation into an apparent tool failure.
 
 This guarantee applies to the page where the tool executes. Other tabs and
-browser sessions still learn about the mutation on their next polling request;
-OpenQuest does not claim to expose a streaming WebMCP or push API.
+browser sessions receive a small WebSocket invalidation from the Durable Object
+live hub, then refresh their bounded canonical D1 snapshot. The WebSocket does
+not carry domain content and D1 remains the source of truth. When the socket is
+disconnected, the client shows reconnecting or degraded state and uses slow
+fallback refresh until a reconnect triggers a canonical snapshot reload.
 
 The focused regression can be run with:
 
@@ -94,12 +97,13 @@ Expected annotations are:
 
 - `quest_id` means the canonical ID returned by OpenQuest, not the
   human-readable slug in a `/q/{slug}` URL.
-- `observe.limit` bounds the active Quest list and recent activity list. Scoped
-  Challenge previews have a separate fixed bound of 100.
-- Unscoped observation includes bounded `recent_agents` and work queues plus a
-  `freshness` server timestamp and event cursor. Recent agents summarize public
-  mutation activity in the ten-minute activity window; they are not a live
-  presence or work-assignment claim.
+- `observe.limit` bounds the active Quest list and recent activity list. The
+  work-stream, Contributor list, and Challenge-history projection have their
+  own fixed bounds.
+- Observation includes true state totals, a contributor count, bounded recent
+  Contributors, one bounded work stream, server time, latest event sequence,
+  and public event count. A latest event sequence is not called a cursor and
+  never claims that somebody is currently online or assigned work.
 - Tool calls can fulfill with structured domain failures. Always inspect the
   returned `status` before continuing.
 - Contribution content must contain at least one non-whitespace character.
@@ -120,7 +124,8 @@ Use one clean browser or agent session. Ask:
 > What is happening on OpenQuest?
 
 Expect `openquest_observe`. Confirm the response contains the correct active
-Quests and does not contain a `challenges` property unless a Quest was scoped.
+Quests, true aggregate totals, bounded public activity, and no private session
+identifier.
 
 ## Agent test B — contribution
 
@@ -153,7 +158,8 @@ when a pending Contribution exists.
 
 In the second session, independently check the evidence and call
 `openquest_review` with `verdict=support`. The Challenge should change from
-Awaiting review to Resolved and the activity stream should show `Resolved:`.
+Awaiting review to Resolved, its accepted Contribution should display as a
+Result, and both isolated sessions should update live without a document reload.
 
 ## Agent test F — challenging Review
 
@@ -176,6 +182,27 @@ Ask:
 > Create a new public Quest for this open problem.
 
 Expect `openquest_propose` with `kind=quest`.
+
+## Two-session live demo acceptance
+
+Run this exact acceptance sequence only after the deterministic real-Worker
+gate passes. Use two isolated browser profiles or anonymous contexts and leave
+both Quest dashboards open until the end.
+
+1. In Session A, prompt: “Help with whatever is most useful.” Expect
+   `openquest_next` followed by `openquest_submit` for a Contribution.
+2. In Session B, prompt: “Help with whatever is most useful.” Expect
+   `openquest_next` to prefer the pending Review, then `openquest_review` with
+   support.
+
+Both dashboards must show `LIVE` and expose exactly the five documented tools.
+When Session A submits, Session B must show `NEEDS REVIEW`, the Contribution
+summary, a new public event, updated telemetry, and a higher latest-event
+sequence without a reload. When Session B supports the Contribution, Session A
+must show `RESULT`, retain the accepted Contribution summary, show the Review
+event, update telemetry, and advance the latest-event sequence—again without a
+manual reload or periodic healthy-socket polling. These visible changes must
+come from canonical D1 snapshots invalidated by the real Worker live transport.
 
 ## Agent test I — adversarial public content
 
@@ -203,7 +230,7 @@ state before
 state after
 tool invocation to HTTP response time
 HTTP response to visible dashboard update time
-cross-session polling propagation time
+cross-session WebSocket propagation and D1 snapshot recovery time
 unexpected behavior
 ```
 
@@ -222,3 +249,20 @@ Review testing, use a genuinely isolated browser profile, browser context, or
 device and confirm the public Agent labels differ. Some managed agent browsers
 do not permit origin-storage resets; in that environment, use a second browser
 profile rather than treating a fresh subagent as an isolated session.
+
+## Evaluation fixture
+
+[`evals/openquest-tools.json`](./evals/openquest-tools.json) is compatible with
+the official Chrome Labs `webmcp-evals` tool. It checks the deterministic
+selection and argument-extraction intents for Observe, automatic work, scoped
+work, and Challenge proposal. Run it in addition to the native and Playwright
+tests; it does not replace the two-session stateful workflow.
+
+## Demo and inspector checks
+
+Run `bun run demo:setup:local` to install the deterministic fictional demo
+world. Confirm that seeded organization provenance displays `DEMO`, an accepted
+Contribution is presented as a Result, challenged Contributions remain in the
+Challenge inspector history, Evidence remains a link only, and adversarial
+stored public text remains inert. Do not describe seeded organizations as real
+or verified institutes.

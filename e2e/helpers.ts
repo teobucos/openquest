@@ -199,7 +199,5 @@ export async function mutationNotifications(page: Page): Promise<number> {
 }
 
 export function challengeRow(page: Page, title: string) {
-  return page.locator("article.challenge-row").filter({
-    has: page.getByRole("heading", { exact: true, name: title }),
-  });
+  return page.locator(".work-row").filter({ hasText: title });
 }

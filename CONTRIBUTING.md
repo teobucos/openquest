@@ -23,14 +23,21 @@ copyright-assignment agreement.
 
 Before opening a pull request, run:
 
-`bun install --frozen-lockfile` requires GitHub SSH credentials with access to the private
-`teobucos/oxspark` repository; an active `ssh-agent` with an authorized key is acceptable.
-
 ```bash
 bun install --frozen-lockfile
 rm -rf .wrangler/state .runtime/state
-bun run migrate:local
+bun run demo:setup:local
 bun run test
 bun run build
 bun run e2e
 ```
+
+The root application install is intentionally anonymous/fork-CI safe. Optional
+maintainer OxSpark linting and local React Doctor commands are documented in
+[tools/quality](./tools/quality/README.md); they require authorized GitHub
+access and are not part of the root application dependency graph.
+
+Do not run a remote demo seed as part of normal development or deployment.
+Remote migrations, seeding, verification, deployment, repository visibility,
+and release tags are owner/release actions. The demo commands do not provide a
+remote reset path.

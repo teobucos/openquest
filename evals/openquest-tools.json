@@ -1,0 +1,73 @@
+[
+  {
+    "name": "Observe public OpenQuest state",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "What is happening on OpenQuest?"
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "openquest_observe",
+        "arguments": {}
+      }
+    ]
+  },
+  {
+    "name": "Select automatic useful work",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Help with whatever is most useful."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "openquest_next",
+        "arguments": {}
+      }
+    ]
+  },
+  {
+    "name": "Select useful work in a known Quest",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Help move this Quest forward. Its canonical Quest ID is demo_quest_tide."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "openquest_next",
+        "arguments": {
+          "quest_id": "demo_quest_tide"
+        }
+      }
+    ]
+  },
+  {
+    "name": "Propose a Challenge in a known Quest",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "This research revealed another open question. Add it to Quest demo_quest_tide as a Challenge titled 'Compare fictional tide markers' with the description 'Compare two fictional public tide markers and record the uncertainty in each observation.'"
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "openquest_propose",
+        "arguments": {
+          "description": "Compare two fictional public tide markers and record the uncertainty in each observation.",
+          "kind": "challenge",
+          "quest_id": "demo_quest_tide",
+          "title": "Compare fictional tide markers"
+        }
+      }
+    ]
+  }
+]

@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "openquest",
   "main": "src/server.ts",
-  "compatibility_date": "2025-03-10",
+  "compatibility_date": "2026-06-11",
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
@@ -14,6 +14,20 @@
       "database_name": "openquest",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LIVE_HUB",
+        "class_name": "LiveHub"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["LiveHub"]
     }
   ]
 }

@@ -1,0 +1,80 @@
+import { expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+function applyMigrations(db: Database) {
+  const migrationsPath = join(import.meta.dir, "../migrations");
+  for (const name of readdirSync(migrationsPath).filter((file) => file.endsWith(".sql")).sort()) {
+    db.exec(readFileSync(join(migrationsPath, name), "utf8"));
+  }
+}
+
+test("the additive live-domain migration preserves deterministic fixture chronology", () => {
+  const db = new Database(":memory:");
+  try {
+    applyMigrations(db);
+    db.exec("INSERT INTO sessions (id, token_hash) VALUES ('session_author', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'), ('session_reviewer', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')");
+    db.exec("INSERT INTO organizations (id, slug, name, category, verification_status, is_demo, ror_id, created_at, updated_at) VALUES ('organization_demo', 'fictional-lab', 'Fictional Lab', 'research', 'unverified', 1, NULL, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')");
+    db.exec("INSERT INTO quests (id, slug, title, goal, description, created_by_session_id, primary_organization_id, created_at, updated_at) VALUES ('quest_fixture', 'fixture-quest', 'Fixture Quest', 'Establish a deterministic public fixture chronology.', '', 'session_author', 'organization_demo', '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z')");
+    db.exec("INSERT INTO challenges (id, quest_id, title, description, created_by_session_id, created_at, updated_at) VALUES ('challenge_fixture', 'quest_fixture', 'Fixture Challenge', 'Use source record times for every generated public event.', 'session_author', '2026-01-03T00:00:00.000Z', '2026-01-03T00:00:00.000Z')");
+    db.exec("INSERT INTO contributions (id, challenge_id, session_id, summary, content, created_at) VALUES ('contribution_fixture', 'challenge_fixture', 'session_author', 'Fixture contribution', 'Deterministic public fixture content.', '2026-01-04T00:00:00.000Z')");
+    db.exec("INSERT INTO reviews (id, contribution_id, reviewer_session_id, verdict, reason, created_at) VALUES ('review_fixture', 'contribution_fixture', 'session_reviewer', 'support', 'A separate fixture reviewer supports this public contribution.', '2026-01-05T00:00:00.000Z')");
+
+    const eventTimes = db.query("SELECT event_type, created_at FROM events WHERE quest_id = 'quest_fixture' ORDER BY sequence ASC").all() as Array<{ event_type: string; created_at: string }>;
+    expect(eventTimes).toEqual([
+      { event_type: "quest.created", created_at: "2026-01-02T00:00:00.000Z" },
+      { event_type: "challenge.created", created_at: "2026-01-03T00:00:00.000Z" },
+      { event_type: "contribution.created", created_at: "2026-01-04T00:00:00.000Z" },
+      { event_type: "review.supported", created_at: "2026-01-05T00:00:00.000Z" },
+    ]);
+    expect(db.query("SELECT status, updated_at FROM challenges WHERE id = 'challenge_fixture'").get()).toEqual({ status: "resolved", updated_at: "2026-01-05T00:00:00.000Z" });
+    expect(db.query("SELECT primary_organization_id FROM quests WHERE id = 'quest_fixture'").get()).toEqual({ primary_organization_id: "organization_demo" });
+  } finally {
+    db.close();
+  }
+});
+
+test("the additive ROR constraint accepts null and canonical URLs without an official column", () => {
+  const db = new Database(":memory:");
+  try {
+    applyMigrations(db);
+    const insert = db.prepare(
+      "INSERT INTO organizations (id, slug, name, category, verification_status, is_demo, ror_id) VALUES (?, ?, ?, 'research', 'verified', 0, ?)",
+    );
+    insert.run("organization_null_ror", "null-ror", "Null ROR Organization", null);
+    insert.run("organization_valid_ror", "valid-ror", "Valid ROR Organization", "https://ror.org/03yrm5c26");
+    expect(() => insert.run(
+      "organization_invalid_ror",
+      "invalid-ror",
+      "Invalid ROR Organization",
+      "ror.org/03yrm5c26",
+    )).toThrow("invalid_ror_id");
+    expect(() => db.exec(
+      "UPDATE organizations SET ror_id = 'https://ror.org/not-a-ror' WHERE id = 'organization_valid_ror'",
+    )).toThrow("invalid_ror_id");
+
+    const columns = db.query("PRAGMA table_info(organizations)").all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).not.toContain("official");
+  } finally {
+    db.close();
+  }
+});
+
+test("the additive Quest demo migration marks only known legacy fixtures", () => {
+  const db = new Database(":memory:");
+  try {
+    applyMigrations(db);
+    expect(db.query(
+      "SELECT id, is_demo FROM quests WHERE id IN ('quest_open_cancer_research', 'quest_accessible_hcmc', 'quest_webmcp_documentation') ORDER BY id",
+    ).all()).toEqual([
+      { id: "quest_accessible_hcmc", is_demo: 1 },
+      { id: "quest_open_cancer_research", is_demo: 1 },
+      { id: "quest_webmcp_documentation", is_demo: 1 },
+    ]);
+    db.exec("INSERT INTO quests (id, slug, title, goal, description) VALUES ('quest_public', 'public-quest', 'Public Quest', 'Keep user-created Quest provenance server controlled.', '')");
+    expect(db.query("SELECT is_demo FROM quests WHERE id = 'quest_public'").get()).toEqual({ is_demo: 0 });
+  } finally {
+    db.close();
+  }
+});
