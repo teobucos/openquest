@@ -47,7 +47,9 @@ export function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: 
     loading: true,
     refreshError: null,
   });
-  const queued = useRef(false);
+  const requestRef = useRef(request);
+  const generation = useRef(0);
+  const queuedGeneration = useRef<number | null>(null);
   const running = useRef<Promise<void> | null>(null);
   const mounted = useRef(true);
   const commitWaiters = useRef<Array<() => void>>([]);
@@ -73,64 +75,63 @@ export function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: 
     await committed;
   }, []);
 
-  const recordReloadFailure = useCallback((cause: unknown) => {
-    if (!mounted.current) return;
-    const message = readableError(cause);
-    setState((current) => current.data
-      ? { ...current, loading: false, refreshError: message }
-      : { ...current, error: message, loading: false, refreshError: null });
-  }, []);
-
-  const loadOnce = useCallback(async () => {
+  const load = useCallback(async (requestGeneration: number) => {
     try {
-      const next = await request();
+      const next = await requestRef.current();
+      if (requestGeneration !== generation.current) return;
       await commitState({ data: next, error: null, loading: false, refreshError: null });
     } catch (cause: unknown) {
+      if (requestGeneration !== generation.current) return;
       const message = readableError(cause);
       await commitState((current) => current.data
         ? { ...current, loading: false, refreshError: message }
         : { ...current, error: message, loading: false, refreshError: null });
     }
-  }, [commitState, request]);
+  }, [commitState]);
 
   const reload = useCallback((): Promise<void> => {
-    queued.current = true;
+    queuedGeneration.current = generation.current;
     if (running.current) return running.current;
 
     const run = async () => {
       try {
-        do {
-          queued.current = false;
-          await loadOnce();
-        } while (queued.current && mounted.current);
+        while (mounted.current && queuedGeneration.current !== null) {
+          const requestGeneration = queuedGeneration.current;
+          queuedGeneration.current = null;
+          await load(requestGeneration);
+        }
       } finally {
         running.current = null;
-        if (queued.current && mounted.current) {
-          reload().catch(recordReloadFailure);
+        if (queuedGeneration.current !== null && mounted.current) {
+          void reload();
         }
       }
     };
     const promise = run();
     running.current = promise;
     return promise;
-  }, [loadOnce, recordReloadFailure]);
+  }, [load]);
+
+  useEffect(() => {
+    requestRef.current = request;
+    generation.current += 1;
+    void reload();
+  }, [reload, request]);
 
   useEffect(() => {
     const refresh = (event?: Event) => {
       const refreshed = reload();
-      refreshed.catch(recordReloadFailure);
       if (event instanceof OpenQuestChangedEvent) {
         event.detail.waitUntil(refreshed);
       }
     };
-    refresh();
     const timer = refreshMs ? window.setInterval(refresh, refreshMs) : undefined;
     window.addEventListener(OPENQUEST_CHANGED_EVENT, refresh);
     return () => {
       if (timer !== undefined) window.clearInterval(timer);
       window.removeEventListener(OPENQUEST_CHANGED_EVENT, refresh);
     };
-  }, [recordReloadFailure, refreshMs, reload]);
+  }, [refreshMs, reload]);
 
   return { data, error, loading, refreshError, reload };
 }
