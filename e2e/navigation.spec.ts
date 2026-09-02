@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { CreateChallengeResponseSchema, CreateQuestResponseSchema } from "../src/contracts";
+import {
+  CreateChallengeResponseSchema,
+  CreateQuestResponseSchema,
+  ObserveResponseSchema,
+} from "../src/contracts";
 import { installFakeWebMcp, registeredTools } from "./helpers";
 
 test("the control center navigates scopes, filters, and inspectors without a document reload", async ({ page }) => {
@@ -49,6 +53,20 @@ test("the inspector restores direct URL state and stays inside narrow viewports"
   await expect(page).not.toHaveURL(inspectorUrl);
 });
 
+test("the native inspector dialog closes from its backdrop without a reload", async ({ page }) => {
+  await page.goto("/");
+  const navigationEntries = await page.evaluate(() => performance.getEntriesByType("navigation").length);
+  const opener = page.locator(".work-row").first();
+  await opener.click();
+  await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toBeVisible();
+
+  // The drawer is fixed to the right; this lands on the native dialog backdrop.
+  await page.mouse.click(20, 400);
+  await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(navigationEntries);
+});
+
 test("unknown routes render an OpenQuest 404 without loading network state", async ({ page }) => {
   let worldReads = 0;
   page.on("request", (request) => {
@@ -59,6 +77,17 @@ test("unknown routes render an OpenQuest 404 without loading network state", asy
   await expect(page.getByText("404 / OPENQUEST ROUTE NOT FOUND", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Return to the control center" })).toBeVisible();
   expect(worldReads).toBe(0);
+});
+
+test("malformed encoded Quest paths render a 404 without requesting public state", async ({ page }) => {
+  let apiReads = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) apiReads += 1;
+  });
+
+  await page.goto("/q/%");
+  await expect(page.getByText("404 / OPENQUEST ROUTE NOT FOUND", { exact: true })).toBeVisible();
+  expect(apiReads).toBe(0);
 });
 
 test("invalid Challenge queries do not open the inspector or request Challenge detail", async ({ page }) => {
@@ -87,6 +116,28 @@ test("synthetic Quest provenance is explicit on Quest cards and context", async 
   await demoQuest.click();
   await expect(page.locator(".scope-provenance")).toContainText("DEMO ·");
   await expect(page.locator(".quest-context-panel .panel-heading")).toContainText("DEMO");
+});
+
+test("a synthetic community Quest presents explicit demo provenance", async ({ page }) => {
+  await page.route("**/api/world*", async (route) => {
+    const response = await route.fetch();
+    const snapshot = ObserveResponseSchema.parse(await response.json());
+    const quest = snapshot.quests[0];
+    if (!quest) throw new Error("Expected a public Quest fixture.");
+    await route.fulfill({
+      body: JSON.stringify({
+        ...snapshot,
+        quests: [{ ...quest, is_demo: true, organization: null }, ...snapshot.quests.slice(1)],
+      }),
+      contentType: "application/json; charset=utf-8",
+      status: response.status(),
+    });
+  });
+  await page.goto("/");
+  const communityDemo = page.locator(".quest-row").first();
+  await expect(communityDemo).toContainText("DEMO ·");
+  await communityDemo.click();
+  await expect(page.locator(".scope-provenance")).toContainText("DEMO · COMMUNITY QUEST");
 });
 
 test("the inspector's Quest link stays in the same History shell", async ({ page }) => {

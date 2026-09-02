@@ -70,6 +70,14 @@ function metricValue(page: Page, label: string) {
   return page.locator(".telemetry-cell").filter({ hasText: label }).locator("strong");
 }
 
+async function animationDurationMilliseconds(locator: ReturnType<Page["locator"]>): Promise<number> {
+  return locator.evaluate((element) => {
+    const duration = getComputedStyle(element).animationDuration;
+    if (duration.endsWith("ms")) return Number.parseFloat(duration);
+    return Number.parseFloat(duration) * 1_000;
+  });
+}
+
 async function latestSequence(page: Page): Promise<number> {
   const text = await page.getByTestId("latest-event-indicator").innerText();
   const match = /#(\d+)$/.exec(text);
@@ -144,6 +152,7 @@ test("two isolated dashboards receive open, Review, and Result state through Wor
   });
   const contributorPage = await contributor.newPage();
   const reviewerPage = await reviewer.newPage();
+  await reviewerPage.emulateMedia({ reducedMotion: "reduce" });
   let reviewerWorldReads = 0;
   reviewerPage.on("request", (request) => {
     if (new URL(request.url()).pathname === "/api/world") reviewerWorldReads += 1;
@@ -175,8 +184,18 @@ test("two isolated dashboards receive open, Review, and Result state through Wor
     });
     expect(submittedResponse.status()).toBe(201);
     const submitted = SubmitContributionResponseSchema.parse(await submittedResponse.json());
+    const contributorWorkRow = challengeRow(contributorPage, challengeTitle);
+    const contributorLatestActivity = contributorPage.getByTestId("activity-list").locator(".activity-row").first();
+    await expect(contributorWorkRow).toHaveAttribute("data-state", "review");
+    await expect(contributorWorkRow).toHaveClass(/is-fresh/);
+    await expect(contributorLatestActivity).toHaveClass(/is-fresh/);
+    await expect(contributorPage.getByTestId("latest-event-indicator")).toHaveClass(/is-fresh/);
+    expect(await animationDurationMilliseconds(contributorWorkRow)).toBe(750);
     await expect(challengeRow(reviewerPage, challengeTitle)).toHaveAttribute("data-state", "review");
+    await expect(challengeRow(reviewerPage, challengeTitle)).toHaveClass(/is-fresh/);
+    expect(await animationDurationMilliseconds(challengeRow(reviewerPage, challengeTitle))).toBeLessThanOrEqual(1);
     await expect(reviewerPage.getByTestId("activity-list")).toContainText("Contribution submitted");
+    await expect(contributorWorkRow).not.toHaveClass(/is-fresh/);
 
     const reviewResponse = await reviewerPage.request.post("/api/reviews", {
       data: {
@@ -276,6 +295,17 @@ test("WebMCP contributions and Reviews propagate through the real Worker live pa
     const sequenceAfterContribution = await latestSequence(agentBPage);
     expect(sequenceAfterContribution).toBeGreaterThan(sequenceBeforeContribution);
 
+    await challengeRow(agentAPage, challengeTitle).click();
+    const inspector = agentAPage.getByRole("dialog", { name: "Challenge inspector" });
+    await expect(inspector).toBeVisible();
+    await expect(inspector.getByText("AWAITING REVIEW", { exact: true })).toBeVisible();
+    await inspector.evaluate((element) => {
+      element.setAttribute("data-close-count", "0");
+      element.addEventListener("close", () => {
+        element.setAttribute("data-close-count", String(Number(element.getAttribute("data-close-count")) + 1));
+      });
+    });
+
     const reviewWork = await successfulTool(
       agentBPage,
       { name: "openquest_next", input: { quest_id: quest.quest_id } },
@@ -309,6 +339,11 @@ test("WebMCP contributions and Reviews propagate through the real Worker live pa
     await expect(agentAPage.getByTestId("activity-list")).toContainText(`Resolved: ${challengeTitle}`);
     await expect(metricValue(agentAPage, "Needs Review")).toHaveText("0");
     await expect(metricValue(agentAPage, "Resolved")).toHaveText("1");
+    await expect(inspector).toBeVisible();
+    await expect(inspector).toHaveJSProperty("open", true);
+    await expect(inspector).toHaveAttribute("data-close-count", "0");
+    await expect(inspector.getByText("SUPPORTED REVIEW", { exact: true })).toBeVisible();
+    await expect(inspector.getByText("A separate anonymous Agent session independently verified this public Contribution.", { exact: true })).toBeVisible();
     expect(await latestSequence(agentAPage)).toBeGreaterThan(sequenceAfterContribution);
   } finally {
     await agentA.close();

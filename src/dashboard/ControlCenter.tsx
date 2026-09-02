@@ -62,6 +62,11 @@ const noHighlights: CanonicalHighlights = {
 function useCanonicalHighlights(data: ObserveResponse): CanonicalHighlights {
   const [highlights, setHighlights] = useState<CanonicalHighlights>(noHighlights);
   const previous = useRef<ObserveResponse | null>(null);
+  const clearTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => {
+    if (clearTimer.current !== undefined) window.clearTimeout(clearTimer.current);
+  }, []);
 
   useEffect(() => {
     const preceding = previous.current;
@@ -78,13 +83,18 @@ function useCanonicalHighlights(data: ObserveResponse): CanonicalHighlights {
       })
       .map((item) => item.challenge.id);
     const latestEventSequence = data.activity[0]?.sequence ?? null;
+    if (clearTimer.current !== undefined) window.clearTimeout(clearTimer.current);
     setHighlights({
       changedChallengeIds,
       latestEventSequence,
       latestSequence: data.freshness.last_sequence,
     });
-    const timer = window.setTimeout(() => setHighlights(noHighlights), 750);
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(() => {
+      if (clearTimer.current !== timer) return;
+      clearTimer.current = undefined;
+      setHighlights(noHighlights);
+    }, 750);
+    clearTimer.current = timer;
   }, [data]);
 
   return highlights;
