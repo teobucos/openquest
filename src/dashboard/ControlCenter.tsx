@@ -1,4 +1,10 @@
-import { useMemo, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { createQuest } from "../api";
 import type { ObserveResponse } from "../contracts";
 import { readableError } from "../useRemoteData";
@@ -39,6 +45,53 @@ function streamLabel(state: ObserveResponse["work_stream"][number]["stream_state
   if (state === "review") return "NEEDS REVIEW";
   if (state === "resolved") return "RESULT";
   return "OPEN";
+}
+
+interface CanonicalHighlights {
+  readonly changedChallengeIds: readonly string[];
+  readonly latestEventSequence: number | null;
+  readonly latestSequence: number | null;
+}
+
+const noHighlights: CanonicalHighlights = {
+  changedChallengeIds: [],
+  latestEventSequence: null,
+  latestSequence: null,
+};
+
+function useCanonicalHighlights(data: ObserveResponse): CanonicalHighlights {
+  const [highlights, setHighlights] = useState<CanonicalHighlights>(noHighlights);
+  const previous = useRef<ObserveResponse | null>(null);
+
+  useEffect(() => {
+    const preceding = previous.current;
+    previous.current = data;
+    if (!preceding || data.freshness.last_sequence <= preceding.freshness.last_sequence) return;
+
+    const precedingStates = new Map(
+      preceding.work_stream.map((item) => [item.challenge.id, item.stream_state]),
+    );
+    const changedChallengeIds = data.work_stream
+      .filter((item) => {
+        const previousState = precedingStates.get(item.challenge.id);
+        return previousState !== undefined && previousState !== item.stream_state;
+      })
+      .map((item) => item.challenge.id);
+    const latestEventSequence = data.activity[0]?.sequence ?? null;
+    setHighlights({
+      changedChallengeIds,
+      latestEventSequence,
+      latestSequence: data.freshness.last_sequence,
+    });
+    const timer = window.setTimeout(() => setHighlights(noHighlights), 750);
+    return () => window.clearTimeout(timer);
+  }, [data]);
+
+  return highlights;
+}
+
+function demoPrefix(quest: { is_demo: boolean }): string {
+  return quest.is_demo ? "DEMO · " : "";
 }
 
 function CreateQuestForm({ onCreated }: { onCreated: (slug: string) => void }) {
@@ -103,6 +156,7 @@ export function ControlCenter({
   const scopeRoute = (patch: Partial<Pick<RouteState, "filter" | "challengeId">>): RouteState => ({ ...route, ...patch });
   const eventCount = data.freshness.event_count;
   const scopeTitle = scopedQuest ? `OPENQUEST / ${scopedQuest.title}` : "OPENQUEST CONTROL CENTER";
+  const highlights = useCanonicalHighlights(data);
 
   return (
     <div className="app-shell">
@@ -116,9 +170,9 @@ export function ControlCenter({
             {scopedQuest ? <a className="back-link" href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: route.filter, challengeId: null })}>← WHOLE NETWORK</a> : null}
             <h1 id="scope-title">{scopeTitle}</h1>
             <p>{scopedQuest ? scopedQuest.goal : "Public work moving through the Quest primitive pipeline."}</p>
-            {scopedQuest ? <div className="scope-provenance"><span>{scopedQuest.status.toUpperCase()} QUEST</span>{scopedQuest.organization ? <span>{scopedQuest.organization.is_demo ? "DEMO · " : ""}{scopedQuest.organization.name} · {scopedQuest.organization.category}</span> : <span>COMMUNITY QUEST</span>}</div> : null}
+            {scopedQuest ? <div className="scope-provenance"><span>{scopedQuest.status.toUpperCase()} QUEST</span><span>{demoPrefix(scopedQuest)}{scopedQuest.organization ? `${scopedQuest.organization.name} · ${scopedQuest.organization.category}` : "COMMUNITY QUEST"}</span></div> : null}
           </div>
-          <div className="scope-actions"><LiveIndicator status={liveStatus} error={refreshError} /><span className="sync-stamp">LATEST EVENT #{data.freshness.last_sequence}</span></div>
+          <div className="scope-actions"><LiveIndicator status={liveStatus} error={refreshError} /><span className={`sync-stamp${highlights.latestSequence === data.freshness.last_sequence ? " is-fresh" : ""}`} data-testid="latest-event-indicator">LATEST EVENT #{data.freshness.last_sequence}</span></div>
         </section>
 
         <section className="telemetry-rail" aria-label="OpenQuest truthful totals">
@@ -137,9 +191,9 @@ export function ControlCenter({
             </div>
             <div className="work-stream" aria-live="polite">
               {visibleWork.map((item) => (
-                <button className="work-row" type="button" key={`${item.stream_state}-${item.challenge.id}`} data-state={item.stream_state} onClick={() => navigate(scopeRoute({ challengeId: item.challenge.id }))}>
+                <button className={`work-row${highlights.changedChallengeIds.includes(item.challenge.id) ? " is-fresh" : ""}`} type="button" key={`${item.stream_state}-${item.challenge.id}`} data-state={item.stream_state} onClick={() => navigate(scopeRoute({ challengeId: item.challenge.id }))}>
                   <span className="work-state">{streamLabel(item.stream_state)}</span>
-                  <span className="work-copy"><strong>{item.challenge.title}</strong>{route.scope.kind === "network" ? <span className="work-quest-title">{item.quest.title}</span> : null}<span className="work-challenge-description">{item.challenge.description}</span>{item.contribution ? <small>{item.stream_state === "resolved" ? "RESULT: " : "CONTRIBUTION: "}{item.contribution.summary}</small> : null}</span>
+                  <span className="work-copy"><strong>{item.challenge.title}</strong>{route.scope.kind === "network" ? <span className="work-quest-title">{demoPrefix(item.quest)}{item.quest.title}</span> : null}<span className="work-challenge-description">{item.challenge.description}</span>{item.contribution ? <small>{item.stream_state === "resolved" ? "RESULT: " : "CONTRIBUTION: "}{item.contribution.summary}</small> : null}</span>
                   <time dateTime={item.stream_state === "resolved" ? item.challenge.updated_at : item.challenge.created_at}>{timestamp(item.stream_state === "resolved" ? item.challenge.updated_at : item.challenge.created_at)}</time>
                 </button>
               ))}
@@ -150,7 +204,7 @@ export function ControlCenter({
           <section className="ops-panel activity-console" aria-labelledby="activity-title">
             <div className="panel-heading"><h2 id="activity-title">PUBLIC ACTIVITY</h2><span>LATEST EVENT #{data.freshness.last_sequence}</span></div>
             <div className="activity-list" data-testid="activity-list" aria-live="polite" aria-relevant="additions text">
-              {data.activity.map((event) => <div className="activity-row" key={event.sequence}><span className="activity-icon">#{String(event.sequence).padStart(4, "0")}</span><div><strong>{event.summary}</strong><span className="activity-meta"><span>{event.actor_label ?? "OpenQuest"}</span><span>{event.event_type.replace(".", " / ")}</span></span></div><time dateTime={event.created_at}>{timestamp(event.created_at)}</time></div>)}
+              {data.activity.map((event) => <div className={`activity-row${highlights.latestEventSequence === event.sequence ? " is-fresh" : ""}`} key={event.sequence}><span className="activity-icon">#{String(event.sequence).padStart(4, "0")}</span><div><strong>{event.summary}</strong><span className="activity-meta"><span>{event.actor_label ?? "OpenQuest"}</span><span>{event.event_type.replace(".", " / ")}</span></span></div><time dateTime={event.created_at}>{timestamp(event.created_at)}</time></div>)}
               {data.activity.length === 0 ? <p className="empty-copy">No public activity yet.</p> : null}
             </div>
           </section>
@@ -158,7 +212,7 @@ export function ControlCenter({
           <aside className="command-rail" aria-label="OpenQuest context">
             {route.scope.kind === "network" ? <QuestList data={data} route={route} onNavigate={onNavigate} /> : <QuestContext quest={scopedQuest} data={data} />}
             <section className="ops-panel contributor-panel"><div className="panel-heading"><h2>RECENT CONTRIBUTORS</h2><span>{data.contributor_count} TOTAL</span></div><div className="contributor-list">{data.recent_contributors.map((contributor) => <div className="contributor-row" key={contributor.actor_label}><span className="contributor-avatar">{contributor.actor_label.slice(-2)}</span><span className="contributor-copy"><strong>{contributor.actor_label}</strong><span>{contributor.last_summary}</span></span><span className="recent-badge">{contributor.activity_count} EVT</span></div>)}{data.recent_contributors.length === 0 ? <p className="empty-copy">No durable contributor activity yet.</p> : null}</div></section>
-            <section className="ops-panel webmcp-panel"><div className="panel-heading"><h2>WEBMCP</h2><span>{tools.registered ? "READY" : "UNAVAILABLE"}</span></div><p className="agent-instruction">Use with an agent: “Help move this Quest forward.”</p><code>openquest_observe · openquest_next · openquest_submit · openquest_review · openquest_propose</code></section>
+            <section className="ops-panel webmcp-panel"><div className="panel-heading"><h2>WEBMCP</h2><span>{tools.registered ? "READY" : "UNAVAILABLE"}</span></div><p className="agent-instruction">Use with an agent: “{route.scope.kind === "quest" ? "Help move this Quest forward." : "Help with whatever is most useful."}”</p><code>openquest_observe · openquest_next · openquest_submit · openquest_review · openquest_propose</code></section>
             {route.scope.kind === "network" ? <CreateQuestForm onCreated={(slug) => navigate({ scope: { kind: "quest", slug }, filter: "all", challengeId: null })} /> : null}
           </aside>
         </div>
@@ -174,11 +228,11 @@ function Metric({ label, detail, value, tone }: { label: string; detail: string;
 }
 
 function QuestList({ data, route, onNavigate }: { data: ObserveResponse; route: RouteState; onNavigate: RouteNavigationHandler }) {
-  return <section className="ops-panel quest-list-panel"><div className="panel-heading"><h2>QUESTS</h2><span>{data.quests.length} VISIBLE</span></div><div className="quest-list">{data.quests.map((quest) => <a className="quest-row" href={`/q/${quest.slug}`} key={quest.id} onClick={onNavigate({ scope: { kind: "quest", slug: quest.slug }, filter: route.filter, challengeId: null })}><strong>{quest.title}</strong><span>{quest.goal}</span><small>{quest.counts.open} OPEN · {quest.counts.awaiting_review} REVIEW · {quest.counts.resolved} RESOLVED</small></a>)}{data.quests.length === 0 ? <p className="empty-copy">No active Quests.</p> : null}</div></section>;
+  return <section className="ops-panel quest-list-panel"><div className="panel-heading"><h2>QUESTS</h2><span>{data.quests.length} VISIBLE</span></div><div className="quest-list">{data.quests.map((quest) => <a className="quest-row" href={`/q/${quest.slug}`} key={quest.id} onClick={onNavigate({ scope: { kind: "quest", slug: quest.slug }, filter: route.filter, challengeId: null })}><strong>{demoPrefix(quest)}{quest.title}</strong><span>{quest.goal}</span><small>{quest.counts.open} OPEN · {quest.counts.awaiting_review} REVIEW · {quest.counts.resolved} RESOLVED</small></a>)}{data.quests.length === 0 ? <p className="empty-copy">No active Quests.</p> : null}</div></section>;
 }
 
 function QuestContext({ quest, data }: { quest: ObserveResponse["quests"][number] | null; data: ObserveResponse }) {
   if (!quest) return null;
   const results = data.work_stream.filter((item) => item.stream_state === "resolved").slice(0, 3);
-  return <section className="ops-panel quest-context-panel"><div className="panel-heading"><h2>QUEST CONTEXT</h2><span>{quest.organization?.is_demo ? "DEMO" : quest.organization ? "PROVENANCE" : "COMMUNITY"}</span></div><p>{quest.description || quest.goal}</p>{quest.organization ? <p className="provenance-copy">{quest.organization.name} · {quest.organization.verification_status}{quest.organization.ror_id ? ` · ${quest.organization.ror_id}` : ""}</p> : null}<h3>RECENT RESULTS</h3>{results.map((item) => <p className="result-summary" key={item.challenge.id}>{item.contribution?.summary}</p>)}{results.length === 0 ? <p className="empty-copy">No accepted results yet.</p> : null}</section>;
+  return <section className="ops-panel quest-context-panel"><div className="panel-heading"><h2>QUEST CONTEXT</h2><span>{quest.is_demo ? "DEMO" : quest.organization ? "PROVENANCE" : "COMMUNITY"}</span></div><p>{quest.description || quest.goal}</p>{quest.organization ? <p className="provenance-copy">{demoPrefix(quest)}{quest.organization.name} · {quest.organization.verification_status}{quest.organization.ror_id ? ` · ${quest.organization.ror_id}` : ""}</p> : null}<h3>RECENT RESULTS</h3>{results.map((item) => <p className="result-summary" key={item.challenge.id}>{item.contribution?.summary}</p>)}{results.length === 0 ? <p className="empty-copy">No accepted results yet.</p> : null}</section>;
 }

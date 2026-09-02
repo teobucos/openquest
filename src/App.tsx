@@ -1,11 +1,15 @@
 import { useCallback } from "react";
 import { observe, observeQuestSlug } from "./api";
 import { ControlCenter } from "./dashboard/ControlCenter";
-import { useRouteState } from "./dashboard/navigation";
+import {
+  useRouteState,
+  type RouteNavigationHandler,
+  type RouteState,
+} from "./dashboard/navigation";
 import type { ObserveResponse } from "./contracts";
 import { useLiveUpdates } from "./useLiveUpdates";
 import { useRemoteData } from "./useRemoteData";
-import { useWebMCPTools } from "./useWebMCPTools";
+import { useWebMCPTools, type WebMCPToolsState } from "./useWebMCPTools";
 
 function Loading() {
   return <main className="loading">Loading public state…</main>;
@@ -15,9 +19,39 @@ function ErrorPanel({ message, retry }: { message: string; retry: () => void }) 
   return <main className="error-panel"><p>{message}</p><button type="button" onClick={retry}>Try again</button></main>;
 }
 
+type DashboardRoute = RouteState & {
+  scope: { kind: "network" } | { kind: "quest"; slug: string };
+};
+
+function isDashboardRoute(route: RouteState): route is DashboardRoute {
+  return route.scope.kind !== "not_found";
+}
+
 export default function App() {
   const tools = useWebMCPTools();
   const { route, navigate, onNavigate } = useRouteState();
+  if (!isDashboardRoute(route)) {
+    return (
+      <main className="not-found-panel">
+        <p>404 / OPENQUEST ROUTE NOT FOUND</p>
+        <a href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })}>Return to the control center</a>
+      </main>
+    );
+  }
+  return <Dashboard route={route} navigate={navigate} onNavigate={onNavigate} tools={tools} />;
+}
+
+function Dashboard({
+  route,
+  navigate,
+  onNavigate,
+  tools,
+}: {
+  route: DashboardRoute;
+  navigate: (route: RouteState) => void;
+  onNavigate: RouteNavigationHandler;
+  tools: WebMCPToolsState;
+}) {
   const request = useCallback(() => route.scope.kind === "quest"
     ? observeQuestSlug(route.scope.slug, 20)
     : observe({ limit: 20 }), [route.scope]);

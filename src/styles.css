@@ -44,6 +44,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .live-indicator.is-reconnecting { color: var(--orange); }
 .live-indicator.is-degraded { color: var(--error); }
 .sync-stamp, .scope-provenance, .panel-heading span, .work-state, .work-row time, .recent-badge { color: var(--muted); }
+.sync-stamp.is-fresh { color: var(--acid); animation: canonical-update 750ms ease-out; }
 .scope-provenance { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 13px; font: 10px "DM Mono", monospace; letter-spacing: .08em; }
 .back-link { color: var(--acid); font: 11px "DM Mono", monospace; letter-spacing: .08em; }
 .telemetry-rail { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); margin-bottom: 18px; }
@@ -65,6 +66,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .work-filters button.is-selected, .work-filters button:hover { color: var(--on-acid); background: var(--acid); border-color: var(--acid); }
 .work-row { appearance: none; width: 100%; display: grid; grid-template-columns: 100px minmax(0, 1fr) auto; gap: 12px; text-align: left; padding: 16px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
 .work-row:hover { background: var(--panel-hover); }
+.work-row.is-fresh, .activity-row.is-fresh { animation: canonical-update 750ms ease-out; }
 .work-row[data-state="review"] .work-state { color: var(--blue); }
 .work-row[data-state="open"] .work-state { color: var(--orange); }
 .work-row[data-state="resolved"] .work-state { color: var(--acid); }
@@ -113,8 +115,11 @@ input, textarea { width: 100%; color: var(--ink); background: var(--field); bord
 .empty-copy, .empty-console { padding: 15px; }
 .loading, .error-panel { width: min(760px, calc(100% - 32px)); margin: 18vh auto; border: 1px solid var(--line); padding: 28px; background: var(--panel); }
 footer { width: min(1540px, 100%); margin: 0 auto; padding: 20px clamp(16px, 4vw, 54px); display: flex; justify-content: space-between; gap: 12px; color: var(--muted); border-top: 1px solid var(--line); font: 10px "DM Mono", monospace; }
-.inspector-backdrop { position: fixed; inset: 0; z-index: 20; display: flex; justify-content: flex-end; background: color-mix(in srgb, #000 52%, transparent); }
-.challenge-inspector { width: min(680px, 100%); height: 100%; overflow-y: auto; background: var(--canvas); border-left: 1px solid var(--line); box-shadow: -16px 0 50px rgb(0 0 0 / .2); }
+.not-found-panel { width: min(760px, calc(100% - 32px)); margin: 18vh auto; border: 1px solid var(--line); padding: 28px; background: var(--panel); }
+.not-found-panel p { margin: 0 0 14px; font: 12px "DM Mono", monospace; letter-spacing: .06em; }
+.not-found-panel a { color: var(--acid); text-decoration: underline; }
+.challenge-inspector { position: fixed; inset: 0 0 0 auto; width: min(680px, 100%); max-width: none; height: 100%; max-height: none; margin: 0; padding: 0; overflow-y: auto; color: var(--ink); background: var(--canvas); border: 0; border-left: 1px solid var(--line); box-shadow: -16px 0 50px rgb(0 0 0 / .2); }
+.challenge-inspector::backdrop { background: color-mix(in srgb, #000 52%, transparent); }
 .inspector-heading { display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1; padding: 16px; background: var(--panel); border-bottom: 1px solid var(--line); font: 11px "DM Mono", monospace; letter-spacing: .06em; }
 .icon-button { width: 32px; height: 32px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; font-size: 23px; line-height: 1; }
 .inspector-content { padding: 22px; }
@@ -136,6 +141,7 @@ footer { width: min(1540px, 100%); margin: 0 auto; padding: 20px clamp(16px, 4vw
 .evidence-list a { color: var(--acid); text-decoration: underline; overflow-wrap: anywhere; }
 .review-record { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .review-record p { color: var(--muted); line-height: 1.55; }
+@keyframes canonical-update { 0% { background-color: color-mix(in srgb, var(--acid) 20%, transparent); } 100% { background-color: transparent; } }
 
 @media (max-width: 1120px) { .control-grid { grid-template-columns: minmax(0, 1.25fr) minmax(300px, .85fr); } .command-rail { grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 780px) { .control-center { padding-inline: 12px; } .scope-header { flex-direction: column; gap: 14px; } .scope-actions { align-items: start; text-align: left; white-space: normal; } .telemetry-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); } .telemetry-cell:nth-child(2n) { border-right: 0; } .telemetry-cell:last-child { border-top: 1px solid var(--line); } .control-grid { grid-template-columns: 1fr; } .command-rail { grid-column: auto; grid-template-columns: 1fr; } .work-row { grid-template-columns: 84px minmax(0, 1fr); } .work-row time { grid-column: 2; } .activity-row { grid-template-columns: 38px minmax(0, 1fr); } .activity-row time { grid-column: 2; } }

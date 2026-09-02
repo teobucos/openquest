@@ -41,17 +41,52 @@ test("the inspector restores direct URL state and stays inside narrow viewports"
   await page.reload();
   const inspector = page.getByRole("dialog", { name: "Challenge inspector" });
   await expect(inspector).toBeVisible();
-  await expect(page.locator("#root")).toHaveJSProperty("inert", true);
-  const lastFocusable = inspector.locator("a[href], button:not([disabled])").last();
-  await expect(lastFocusable).toBeVisible();
-  await page.getByRole("button", { name: "Close Challenge inspector" }).press("Shift+Tab");
-  await expect(lastFocusable).toBeFocused();
-  await page.keyboard.press("Tab");
+  await expect(inspector).toHaveJSProperty("open", true);
+  await expect(page.locator("#root")).toHaveJSProperty("inert", false);
   await expect(page.getByRole("button", { name: "Close Challenge inspector" })).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.keyboard.press("Escape");
-  await expect(page.locator("#root")).toHaveJSProperty("inert", false);
   await expect(page).not.toHaveURL(inspectorUrl);
+});
+
+test("unknown routes render an OpenQuest 404 without loading network state", async ({ page }) => {
+  let worldReads = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/world") worldReads += 1;
+  });
+
+  await page.goto("/not-an-openquest-route");
+  await expect(page.getByText("404 / OPENQUEST ROUTE NOT FOUND", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return to the control center" })).toBeVisible();
+  expect(worldReads).toBe(0);
+});
+
+test("invalid Challenge queries do not open the inspector or request Challenge detail", async ({ page }) => {
+  let challengeReads = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/challenges/")) challengeReads += 1;
+  });
+
+  await page.goto("/?challenge=not%20a%20canonical%20id");
+  await expect(page.getByRole("heading", { name: "OPENQUEST CONTROL CENTER" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toHaveCount(0);
+  expect(challengeReads).toBe(0);
+});
+
+test("the agent prompt is specific to the selected scope", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator(".agent-instruction")).toContainText("Help with whatever is most useful.");
+  await page.locator(".quest-row").first().click();
+  await expect(page.locator(".agent-instruction")).toContainText("Help move this Quest forward.");
+});
+
+test("synthetic Quest provenance is explicit on Quest cards and context", async ({ page }) => {
+  await page.goto("/");
+  const demoQuest = page.locator(".quest-row").filter({ hasText: "DEMO ·" }).first();
+  await expect(demoQuest).toBeVisible();
+  await demoQuest.click();
+  await expect(page.locator(".scope-provenance")).toContainText("DEMO ·");
+  await expect(page.locator(".quest-context-panel .panel-heading")).toContainText("DEMO");
 });
 
 test("the inspector's Quest link stays in the same History shell", async ({ page }) => {
