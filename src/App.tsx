@@ -56,8 +56,9 @@ function Dashboard({
     ? observeQuestSlug(route.scope.slug, 20)
     : observe({ limit: 20 }), [route.scope]);
   const { data, error, loading, refreshError, reload } = useRemoteData<ObserveResponse>(request);
-  const scopedQuest = route.scope.kind === "quest" && data?.quests[0]?.slug === route.scope.slug
-    ? data.quests[0]
+  const selectedQuestSlug = route.scope.kind === "quest" ? route.scope.slug : null;
+  const scopedQuest = selectedQuestSlug
+    ? data?.quests.find((quest) => quest.slug === selectedQuestSlug) ?? null
     : null;
   const liveScope = route.scope.kind === "network"
     ? {}

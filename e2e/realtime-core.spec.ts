@@ -8,6 +8,7 @@ declare global {
       readyState: number;
       url: string;
     }>;
+    __openquestStaleNetworkSnapshot?: boolean;
   }
 }
 
@@ -43,6 +44,26 @@ async function installSocketTracking(page: import("@playwright/test").Page): Pro
       }
     }
     window.__openquestRealtimeSockets = sockets;
+    window.__openquestStaleNetworkSnapshot = false;
+    const watchForStaleNetworkSnapshot = () => {
+      if (!window.location.pathname.startsWith("/q/")) return;
+      const text = document.body.textContent ?? "";
+      const openTotal = Array.from(document.querySelectorAll(".telemetry-cell"))
+        .find((cell) => cell.textContent?.includes("Challenges accepting work"))
+        ?.querySelector("strong")?.textContent;
+      if (
+        text.includes("NETWORK ACTIVITY SNAPSHOT")
+        || text.includes("NETWORK WORK SNAPSHOT")
+        || openTotal === "911"
+      ) {
+        window.__openquestStaleNetworkSnapshot = true;
+      }
+    };
+    const observer = new MutationObserver(watchForStaleNetworkSnapshot);
+    window.addEventListener("DOMContentLoaded", () => {
+      observer.observe(document.body, { childList: true, subtree: true });
+      watchForStaleNetworkSnapshot();
+    }, { once: true });
     Object.defineProperty(window, "WebSocket", { configurable: true, value: TrackingWebSocket });
   });
 }
@@ -64,92 +85,187 @@ function changeLocation(path: string): void {
   window.dispatchEvent(new Event("openquest:location-changed"));
 }
 
-test("queued snapshots use the newest route generation and replace the live socket scope", async ({ page }) => {
+interface ScopedSnapshot {
+  activity: Array<{ summary: string }>;
+  freshness: { last_sequence: number };
+  totals: { open: number };
+  work_stream: Array<{ challenge: { title: string } }>;
+}
+
+const networkSnapshot = {
+  activity: "NETWORK ACTIVITY SNAPSHOT",
+  latestSequence: 91_001,
+  openTotal: 911,
+  work: "NETWORK WORK SNAPSHOT",
+};
+
+function snapshotFor(scope: string): { latestSequence: number; openTotal: number } {
+  if (scope === "network") return networkSnapshot;
+  if (scope === "quest-a") return { latestSequence: 91_101, openTotal: 1_011 };
+  return { latestSequence: 91_201, openTotal: 1_111 };
+}
+
+function stampSnapshot(snapshot: ScopedSnapshot, scope: string): ScopedSnapshot {
+  const marker = snapshotFor(scope);
+  snapshot.freshness.last_sequence = marker.latestSequence;
+  snapshot.totals.open = marker.openTotal;
+  if (scope === "network") {
+    const firstWork = snapshot.work_stream[0];
+    const firstActivity = snapshot.activity[0];
+    if (firstWork) firstWork.challenge.title = networkSnapshot.work;
+    if (firstActivity) firstActivity.summary = networkSnapshot.activity;
+  }
+  return snapshot;
+}
+
+async function expectScopeSnapshot(
+  page: import("@playwright/test").Page,
+  heading: string,
+  marker: { latestSequence: number; openTotal: number },
+): Promise<void> {
+  await expect(page.locator("#scope-title")).toHaveText(heading);
+  await expect(page.getByTestId("latest-event-indicator")).toContainText(`#${marker.latestSequence}`);
+  await expect(page.locator(".telemetry-cell").filter({ hasText: "Challenges accepting work" }).locator("strong")).toHaveText(String(marker.openTotal));
+}
+
+async function expectNoNetworkSnapshot(page: import("@playwright/test").Page): Promise<void> {
+  await expect(page.getByText(networkSnapshot.work, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(networkSnapshot.activity, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(String(networkSnapshot.openTotal), { exact: true })).toHaveCount(0);
+}
+
+interface HeldSnapshot {
+  readonly ready: Promise<void>;
+  readonly release: () => void;
+  readonly scope: string;
+  markReady(): void;
+  waitForRelease(): Promise<void>;
+}
+
+function holdNextSnapshot(scope: string): HeldSnapshot {
+  let markReady: (() => void) | undefined;
+  let release: (() => void) | undefined;
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return {
+    markReady() {
+      markReady?.();
+    },
+    ready,
+    release() {
+      release?.();
+    },
+    scope,
+    waitForRelease() {
+      return released;
+    },
+  };
+}
+
+test("queued snapshots keep each route scope exact and leave only the final network socket", async ({ page }) => {
   test.setTimeout(45_000);
   await installSocketTracking(page);
-  await page.goto("/");
-  const questATitle = `Route generation A ${crypto.randomUUID()}`;
-  const questBTitle = `Route generation B ${crypto.randomUUID()}`;
-  const questA = await createQuest(page, questATitle);
-  const questB = await createQuest(page, questBTitle);
-  await page.evaluate(() => window.dispatchEvent(new Event("openquest:changed")));
-  await expect(page.locator(".quest-row").filter({ hasText: questATitle })).toBeVisible();
-
-  let releaseNetwork: (() => void) | undefined;
-  let markNetworkHeld: (() => void) | undefined;
-  const networkHeld = new Promise<void>((resolve) => {
-    markNetworkHeld = resolve;
-  });
-  const networkReleased = new Promise<void>((resolve) => {
-    releaseNetwork = resolve;
-  });
+  let questASlug = "";
+  let questBSlug = "";
   const requestedScopes: string[] = [];
-  let holdNetwork = true;
+  let activeRelease: (() => void) | undefined;
+  let heldSnapshot: HeldSnapshot | null = null;
 
   await page.route("**/api/world*", async (route) => {
     const url = new URL(route.request().url());
     const scope = url.searchParams.get("quest_slug") ?? "network";
     requestedScopes.push(scope);
-    if (holdNetwork && scope === "network") {
-      holdNetwork = false;
-      const response = await route.fetch();
-      markNetworkHeld?.();
-      await networkReleased;
-      await route.fulfill({ response });
+    const response = await route.fetch();
+    const snapshotScope = scope === "network"
+      ? "network"
+      : scope === questASlug
+        ? "quest-a"
+        : scope === questBSlug
+          ? "quest-b"
+          : scope;
+    const snapshot = stampSnapshot(await response.json() as ScopedSnapshot, snapshotScope);
+    if (heldSnapshot?.scope !== scope) {
+      await route.fulfill({
+        body: JSON.stringify(snapshot),
+        contentType: "application/json; charset=utf-8",
+        status: response.status(),
+      });
       return;
     }
-    await route.continue();
+    const snapshotHold = heldSnapshot;
+    heldSnapshot = null;
+    activeRelease = snapshotHold.release;
+    snapshotHold.markReady();
+    try {
+      await snapshotHold.waitForRelease();
+      await route.fulfill({
+        body: JSON.stringify(snapshot),
+        contentType: "application/json; charset=utf-8",
+        status: response.status(),
+      });
+    } finally {
+      activeRelease = undefined;
+    }
   });
 
+  await page.goto("/");
+  await expectScopeSnapshot(page, "OPENQUEST CONTROL CENTER", networkSnapshot);
+  await expect(page.getByText(networkSnapshot.work, { exact: true })).toBeVisible();
+  await expect(page.getByText(networkSnapshot.activity, { exact: true })).toBeVisible();
+  const questATitle = `Route generation A ${crypto.randomUUID()}`;
+  const questBTitle = `Route generation B ${crypto.randomUUID()}`;
+  const questA = await createQuest(page, questATitle);
+  const questB = await createQuest(page, questBTitle);
+  questASlug = questA.slug;
+  questBSlug = questB.slug;
+  await page.evaluate(() => window.dispatchEvent(new Event("openquest:changed")));
+  await expect(page.locator(".quest-row").filter({ hasText: questATitle })).toBeVisible();
+
   try {
+    const networkHold = holdNextSnapshot("network");
+    heldSnapshot = networkHold;
     await page.evaluate(() => window.dispatchEvent(new Event("openquest:changed")));
-    await networkHeld;
+    await networkHold.ready;
     await page.locator(".quest-row").filter({ hasText: questATitle }).click();
-    releaseNetwork?.();
-    await expect(page.getByRole("heading", { name: `OPENQUEST / ${questATitle}` })).toBeVisible();
+    await expect(page.locator(".loading")).toBeVisible();
+    await expectNoNetworkSnapshot(page);
+    networkHold.release();
+    await expectScopeSnapshot(page, `OPENQUEST / ${questATitle}`, snapshotFor("quest-a"));
     await expect.poll(() => requestedScopes.includes(questA.slug)).toBe(true);
 
-    let releaseQuestA: (() => void) | undefined;
-    let markQuestAHeld: (() => void) | undefined;
-    const questAHeld = new Promise<void>((resolve) => {
-      markQuestAHeld = resolve;
-    });
-    const questAReleased = new Promise<void>((resolve) => {
-      releaseQuestA = resolve;
-    });
-    let holdQuestA = true;
-    await page.unroute("**/api/world*");
-    await page.route("**/api/world*", async (route) => {
-      const url = new URL(route.request().url());
-      const scope = url.searchParams.get("quest_slug") ?? "network";
-      requestedScopes.push(scope);
-      if (holdQuestA && scope === questA.slug) {
-        holdQuestA = false;
-        const response = await route.fetch();
-        markQuestAHeld?.();
-        await questAReleased;
-        await route.fulfill({ response });
-        return;
-      }
-      await route.continue();
-    });
-
+    const questAHold = holdNextSnapshot(questA.slug);
+    heldSnapshot = questAHold;
     await page.evaluate(() => window.dispatchEvent(new Event("openquest:changed")));
-    await questAHeld;
+    await questAHold.ready;
     await page.evaluate(changeLocation, `/q/${questB.slug}`);
-    releaseQuestA?.();
-    await expect(page.getByRole("heading", { name: `OPENQUEST / ${questBTitle}` })).toBeVisible();
+    await expect(page.locator(".loading")).toBeVisible();
+    await expectNoNetworkSnapshot(page);
+    questAHold.release();
+    await expectScopeSnapshot(page, `OPENQUEST / ${questBTitle}`, snapshotFor("quest-b"));
     await expect.poll(() => requestedScopes.includes(questB.slug)).toBe(true);
-    await expect(page.getByRole("heading", { name: `OPENQUEST / ${questATitle}` })).toHaveCount(0);
+
+    const questBHold = holdNextSnapshot(questB.slug);
+    heldSnapshot = questBHold;
+    await page.evaluate(() => window.dispatchEvent(new Event("openquest:changed")));
+    await questBHold.ready;
+    await page.evaluate(changeLocation, "/");
+    await expect(page.locator(".loading")).toBeVisible();
+    questBHold.release();
+    await expectScopeSnapshot(page, "OPENQUEST CONTROL CENTER", networkSnapshot);
+    await expect.poll(() => page.evaluate(() => window.__openquestStaleNetworkSnapshot)).toBe(false);
 
     await expect.poll(() => page.evaluate(() => {
       const liveSockets = (window.__openquestRealtimeSockets ?? []).filter((socket) => (
         new URL(socket.url).pathname === "/api/live"
       ));
       return liveSockets.filter((socket) => socket.readyState === WebSocket.OPEN).map((socket) => socket.url);
-    })).toEqual([expect.stringContaining(`quest_id=${questB.quest_id}`)]);
+    })).toEqual([expect.not.stringContaining("quest_id=")]);
   } finally {
-    releaseNetwork?.();
+    activeRelease?.();
   }
 });
 

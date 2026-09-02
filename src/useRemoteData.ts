@@ -14,6 +14,7 @@ interface RemoteDataState<Value> {
   data: Value | null;
   error: string | null;
   loading: boolean;
+  owner: (() => Promise<Value>) | null;
   refreshError: string | null;
 }
 
@@ -41,10 +42,11 @@ export async function notifyOpenQuestChanged(): Promise<void> {
 }
 
 export function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: number) {
-  const [{ data, error, loading, refreshError }, setState] = useState<RemoteDataState<Value>>({
+  const [{ data, error, loading, owner, refreshError }, setState] = useState<RemoteDataState<Value>>({
     data: null,
     error: null,
     loading: true,
+    owner: null,
     refreshError: null,
   });
   const requestRef = useRef(request);
@@ -76,16 +78,31 @@ export function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: 
   }, []);
 
   const load = useCallback(async (requestGeneration: number) => {
+    const requestOwner = requestRef.current;
     try {
-      const next = await requestRef.current();
+      const next = await requestOwner();
       if (requestGeneration !== generation.current) return;
-      await commitState({ data: next, error: null, loading: false, refreshError: null });
+      await commitState({
+        data: next,
+        error: null,
+        loading: false,
+        owner: requestOwner,
+        refreshError: null,
+      });
     } catch (cause: unknown) {
       if (requestGeneration !== generation.current) return;
       const message = readableError(cause);
-      await commitState((current) => current.data
-        ? { ...current, loading: false, refreshError: message }
-        : { ...current, error: message, loading: false, refreshError: null });
+      await commitState((current) => (
+        current.owner === requestOwner && current.data
+          ? { ...current, loading: false, refreshError: message }
+          : {
+            data: null,
+            error: message,
+            loading: false,
+            owner: requestOwner,
+            refreshError: null,
+          }
+      ));
     }
   }, [commitState]);
 
@@ -102,9 +119,6 @@ export function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: 
         }
       } finally {
         running.current = null;
-        if (queuedGeneration.current !== null && mounted.current) {
-          void reload();
-        }
       }
     };
     const promise = run();
@@ -112,7 +126,7 @@ export function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: 
     return promise;
   }, [load]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     requestRef.current = request;
     generation.current += 1;
     void reload();
@@ -133,5 +147,12 @@ export function useRemoteData<Value>(request: () => Promise<Value>, refreshMs?: 
     };
   }, [refreshMs, reload]);
 
-  return { data, error, loading, refreshError, reload };
+  const currentRequest = owner === request;
+  return {
+    data: currentRequest ? data : null,
+    error: currentRequest ? error : null,
+    loading: currentRequest ? loading : true,
+    refreshError: currentRequest ? refreshError : null,
+    reload,
+  };
 }
