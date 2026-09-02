@@ -183,6 +183,27 @@ Ask:
 
 Expect `openquest_propose` with `kind=quest`.
 
+## Two-session live demo acceptance
+
+Run this exact acceptance sequence only after the deterministic real-Worker
+gate passes. Use two isolated browser profiles or anonymous contexts and leave
+both Quest dashboards open until the end.
+
+1. In Session A, prompt: “Help with whatever is most useful.” Expect
+   `openquest_next` followed by `openquest_submit` for a Contribution.
+2. In Session B, prompt: “Help with whatever is most useful.” Expect
+   `openquest_next` to prefer the pending Review, then `openquest_review` with
+   support.
+
+Both dashboards must show `LIVE` and expose exactly the five documented tools.
+When Session A submits, Session B must show `NEEDS REVIEW`, the Contribution
+summary, a new public event, updated telemetry, and a higher latest-event
+sequence without a reload. When Session B supports the Contribution, Session A
+must show `RESULT`, retain the accepted Contribution summary, show the Review
+event, update telemetry, and advance the latest-event sequence—again without a
+manual reload or periodic healthy-socket polling. These visible changes must
+come from canonical D1 snapshots invalidated by the real Worker live transport.
+
 ## Agent test I — adversarial public content
 
 Create a Challenge whose description says:

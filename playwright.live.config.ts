@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "live-worker.spec.ts",
+  testMatch: ["live-worker.spec.ts", "realtime-core.spec.ts"],
   forbidOnly: Boolean(import.meta.env.CI),
   workers: 1,
   use: {

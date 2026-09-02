@@ -2,9 +2,15 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   CreateChallengeResponseSchema,
   CreateQuestResponseSchema,
+  GetNextWorkResponseSchema,
   ReviewContributionResponseSchema,
   SubmitContributionResponseSchema,
 } from "../src/contracts";
+import {
+  installFakeWebMcp,
+  registeredTools,
+  successfulTool,
+} from "./helpers";
 
 declare global {
   interface Window {
@@ -14,6 +20,30 @@ declare global {
 
 function challengeRow(page: Page, title: string) {
   return page.locator(".work-row").filter({ hasText: title });
+}
+
+const expectedToolNames = [
+  "openquest_next",
+  "openquest_observe",
+  "openquest_propose",
+  "openquest_review",
+  "openquest_submit",
+];
+
+function metricValue(page: Page, label: string) {
+  return page.locator(".telemetry-cell").filter({ hasText: label }).locator("strong");
+}
+
+async function latestSequence(page: Page): Promise<number> {
+  const text = await page.getByTestId("latest-event-indicator").innerText();
+  const match = /#(\d+)$/.exec(text);
+  if (!match) throw new Error(`Expected a latest event sequence, received: ${text}`);
+  return Number(match[1]);
+}
+
+async function expectFiveWebMcpTools(page: Page): Promise<void> {
+  await expect(page.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
+  expect((await registeredTools(page)).map((tool) => tool.name)).toEqual(expectedToolNames);
 }
 
 async function createQuest(page: Page, title: string) {
@@ -115,6 +145,125 @@ test("two isolated dashboards receive open, Review, and Result state through Wor
   } finally {
     await contributor.close();
     await reviewer.close();
+  }
+});
+
+test("WebMCP contributions and Reviews propagate through the real Worker live path", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const agentA = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `live-webmcp-a-${crypto.randomUUID()}` },
+  });
+  const agentB = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `live-webmcp-b-${crypto.randomUUID()}` },
+  });
+  await Promise.all([installFakeWebMcp(agentA), installFakeWebMcp(agentB)]);
+  const agentAPage = await agentA.newPage();
+  const agentBPage = await agentB.newPage();
+  let agentAWorldReads = 0;
+  let agentBWorldReads = 0;
+  agentAPage.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/world") agentAWorldReads += 1;
+  });
+  agentBPage.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/world") agentBWorldReads += 1;
+  });
+
+  try {
+    await agentAPage.goto("/");
+    const questTitle = `WebMCP live Quest ${crypto.randomUUID()}`;
+    const quest = await createQuest(agentAPage, questTitle);
+    const challengeTitle = `WebMCP live Challenge ${crypto.randomUUID()}`;
+    const challenge = await createChallenge(agentAPage, quest.quest_id, challengeTitle);
+
+    await Promise.all([
+      openQuestDashboard(agentAPage, quest.slug, questTitle),
+      openQuestDashboard(agentBPage, quest.slug, questTitle),
+    ]);
+    await Promise.all([expectFiveWebMcpTools(agentAPage), expectFiveWebMcpTools(agentBPage)]);
+
+    await agentAPage.waitForTimeout(300);
+    const healthyAgentAReads = agentAWorldReads;
+    const healthyAgentBReads = agentBWorldReads;
+    await Promise.all([agentAPage.waitForTimeout(1_600), agentBPage.waitForTimeout(1_600)]);
+    expect(agentAWorldReads).toBe(healthyAgentAReads);
+    expect(agentBWorldReads).toBe(healthyAgentBReads);
+
+    const sequenceBeforeContribution = await latestSequence(agentBPage);
+    const contributionWork = await successfulTool(
+      agentAPage,
+      { name: "openquest_next", input: { quest_id: quest.quest_id } },
+      GetNextWorkResponseSchema,
+    );
+    expect(contributionWork).toMatchObject({
+      challenge: { id: challenge.challenge_id },
+      status: "work_available",
+      work_type: "contribute",
+    });
+    if (contributionWork.status !== "work_available" || contributionWork.work_type !== "contribute") {
+      throw new Error("Expected Agent A to receive Contribution work.");
+    }
+
+    const contributionSummary = "WebMCP contribution ready for independent Review.";
+    const submitted = await successfulTool(
+      agentAPage,
+      {
+        name: "openquest_submit",
+        input: {
+          challenge_id: contributionWork.challenge.id,
+          content: "This public Contribution was submitted through the native-style WebMCP adapter against the real Worker.",
+          evidence: [{ title: "WebMCP live contribution evidence", url: "https://example.com/webmcp-live-contribution" }],
+          summary: contributionSummary,
+        },
+      },
+      SubmitContributionResponseSchema,
+    );
+    expect(submitted.status).toBe("submitted");
+    await expect(challengeRow(agentAPage, challengeTitle)).toHaveAttribute("data-state", "review");
+    await expect(challengeRow(agentBPage, challengeTitle)).toHaveAttribute("data-state", "review");
+    await expect(challengeRow(agentBPage, challengeTitle)).toContainText(contributionSummary);
+    await expect(agentBPage.getByTestId("activity-list")).toContainText("Contribution submitted");
+    await expect(metricValue(agentBPage, "Needs Review")).toHaveText("1");
+    await expect(metricValue(agentBPage, "Open")).toHaveText("0");
+    const sequenceAfterContribution = await latestSequence(agentBPage);
+    expect(sequenceAfterContribution).toBeGreaterThan(sequenceBeforeContribution);
+
+    const reviewWork = await successfulTool(
+      agentBPage,
+      { name: "openquest_next", input: { quest_id: quest.quest_id } },
+      GetNextWorkResponseSchema,
+    );
+    expect(reviewWork).toMatchObject({
+      contribution: { id: submitted.contribution_id },
+      status: "work_available",
+      work_type: "review",
+    });
+    if (reviewWork.status !== "work_available" || reviewWork.work_type !== "review") {
+      throw new Error("Expected Agent B to receive Review work first.");
+    }
+
+    const reviewed = await successfulTool(
+      agentBPage,
+      {
+        name: "openquest_review",
+        input: {
+          contribution_id: reviewWork.contribution.id,
+          evidence: [{ title: "WebMCP live review evidence", url: "https://example.com/webmcp-live-review" }],
+          reason: "A separate anonymous Agent session independently verified this public Contribution.",
+          verdict: "support",
+        },
+      },
+      ReviewContributionResponseSchema,
+    );
+    expect(reviewed).toMatchObject({ challenge_status: "resolved", verdict: "support" });
+    await expect(challengeRow(agentAPage, challengeTitle)).toHaveAttribute("data-state", "resolved");
+    await expect(challengeRow(agentAPage, challengeTitle)).toContainText(contributionSummary);
+    await expect(agentAPage.getByTestId("activity-list")).toContainText(`Resolved: ${challengeTitle}`);
+    await expect(metricValue(agentAPage, "Needs Review")).toHaveText("0");
+    await expect(metricValue(agentAPage, "Resolved")).toHaveText("1");
+    expect(await latestSequence(agentAPage)).toBeGreaterThan(sequenceAfterContribution);
+  } finally {
+    await agentA.close();
+    await agentB.close();
   }
 });
 
