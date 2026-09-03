@@ -9,7 +9,9 @@ recorded the evidence for the target deployment.
 - [ ] Run `bun install --frozen-lockfile`, `bun run test`, `bun run build`,
   `bun run e2e`, and `bun run e2e:live` on the release commit.
 - [ ] Confirm the deterministic demo migration, seed, and verification commands
-  against the selected target without resetting public records.
+  against the selected target without resetting public records (direct
+  `demo:seed:*` is for empty DBs only and refuses before writing when any
+  application table is non-empty — use `demo:rebuild:*` for a dirty DB).
 - [ ] Review the release diff for the exactly five WebMCP tools and closed
   public inputs, including optional `openquest_next` Challenge/Contribution
   targeting that does not reserve work.
@@ -25,7 +27,9 @@ recorded the evidence for the target deployment.
 - [ ] Owner creates and binds the intended production D1 database and Durable
   Object migration in `wrangler.jsonc`.
 - [ ] Owner applies remote migrations, deliberately seeds the fictional demo
-  once, verifies it, and deploys the Worker.
+  once, verifies it, and deploys the Worker. Remote prep must use
+  `bun run demo:rebuild:remote` (double-guarded); direct
+  `bun run demo:seed:remote` is for empty DBs only and refuses on dirty state.
 - [ ] Owner records the HTTPS deployment URL and verifies its WebSocket upgrade
   and reconnect behavior in the deployed environment.
 - [ ] Owner uses a WebMCP-capable native browser to inspect and invoke all five
@@ -57,8 +61,11 @@ after the submission freeze.
 - [ ] Owner records the current deployed commit (`git rev-parse HEAD`).
 - [ ] Owner stops/quiesces the demo service and closes existing demo browser
   sessions where practical.
-- [ ] Owner backs up the current D1 persistent state once before the
-  destructive reset (do not restore old content unless the rebuild fails).
+- [ ] Owner backs up the current D1 persistent state once before the first
+  destructive production rebuild (example:
+  `cp -r <OPENQUEST_PERSIST_PATH> <backup-path>`) and keeps the backup until
+  the final demo state is accepted (do not restore old content unless the
+  rebuild fails).
 - [ ] Owner runs the guarded rebuild against the exact service persistence
   path (resolve `OPENQUEST_PERSIST_PATH`; default `.runtime/state`):
   `OPENQUEST_PERSIST_PATH=<exact-service-path> bun run demo:rebuild:serve`

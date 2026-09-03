@@ -27,6 +27,12 @@ order and resets the `events` sequence so the reseeded fixture starts at
 event #1. `demo/expected-state.json` records the assertions above, and the
 `demo:verify:*` commands query D1 and fail on any mismatch.
 
+Direct `demo:seed:<target>` commands are for empty DBs only: each one first
+runs `scripts/assert-demo-empty.mjs <target>`, which refuses before writing
+when any of the 8 application tables is non-empty — run
+`demo:rebuild:<target>` instead. Remote prep must use `demo:rebuild:remote`
+(double-guarded); direct `demo:seed:remote` is for empty DBs only.
+
 ## Rebuild (deliberately destructive)
 
 Rebuild is a guarded maintenance operation, never part of normal deployment:
@@ -39,8 +45,11 @@ bun scripts/reset-demo-world.mjs --target serve    # persistent service state
 Remote rebuild requires explicit double confirmation (see the wrapper usage).
 Normal `deploy` never resets, seeds, or wipes data.
 
-Runbook: stop/quiesce the service, close browser sessions, reset, seed,
-verify, restart, run health checks, then open fresh browsers. The realtime
+Runbook: stop/quiesce the service, close browser sessions, back up the exact
+persistent D1 state once before the first destructive production rebuild
+(example: `cp -r <OPENQUEST_PERSIST_PATH> <backup-path>`) and keep the backup
+until the final demo state is accepted, then reset, seed, verify, restart,
+run health checks, then open fresh browsers. The realtime
 client treats event freshness as monotonic, so browsers must be opened fresh
 after a sequence reset — never reset underneath live sessions.
 
