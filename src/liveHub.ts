@@ -3,7 +3,7 @@ import {
   parseLiveInvalidation,
   serializeLiveInvalidation,
 } from "./liveProtocol";
-import { validateLiveSocketRequest } from "./liveScope";
+import { resolveAllowedLiveOrigins, validateLiveSocketRequest } from "./liveScope";
 import { broadcastLiveInvalidation as broadcastInvalidation } from "./liveTransport";
 import { questExists } from "./store";
 import { DurableObject } from "cloudflare:workers";
@@ -12,6 +12,7 @@ export interface LiveHubEnvironment {
   DB: D1Database;
   LIVE_HUB: DurableObjectNamespace;
   OPENQUEST_PUBLIC_ORIGIN?: string;
+  OPENQUEST_PUBLIC_ORIGINS?: string;
 }
 
 function invalidLiveRequest(message: string, status = 400): Response {
@@ -33,7 +34,7 @@ export async function upgradeLiveSocket(
   const scope = await validateLiveSocketRequest(
     request,
     (questId) => questExists(env.DB, questId),
-    env.OPENQUEST_PUBLIC_ORIGIN,
+    resolveAllowedLiveOrigins(env),
   );
   if (scope instanceof Response) return scope;
   const hub = env.LIVE_HUB.get(env.LIVE_HUB.idFromName(liveHubName(scope.questId)));

@@ -14,10 +14,26 @@ function invalidLiveRequest(message: string, status = 400): Response {
   return new Response(message, { status });
 }
 
+export interface LiveOriginEnvironment {
+  OPENQUEST_PUBLIC_ORIGIN?: string;
+  OPENQUEST_PUBLIC_ORIGINS?: string;
+}
+
+// Comma-separated allowlist so the dashboard can be served live from more
+// than one public origin (e.g. a public domain plus a private tailnet URL).
+// Falls back to the legacy single-origin variable, then to same-origin.
+export function resolveAllowedLiveOrigins(env: LiveOriginEnvironment): string[] | undefined {
+  const raw = env.OPENQUEST_PUBLIC_ORIGINS?.trim()
+    ? env.OPENQUEST_PUBLIC_ORIGINS
+    : (env.OPENQUEST_PUBLIC_ORIGIN ?? "");
+  const origins = raw.split(",").map((origin) => origin.trim()).filter((origin) => origin.length > 0);
+  return origins.length > 0 ? origins : undefined;
+}
+
 export async function validateLiveSocketRequest(
   request: Request,
   hasQuest: QuestScopeLookup,
-  allowedOrigin = new URL(request.url).origin,
+  allowedOrigins: readonly string[] | string | undefined = new URL(request.url).origin,
 ): Promise<Response | ValidatedLiveScope> {
   if (request.method !== "GET") {
     return invalidLiveRequest("Live transport only accepts GET WebSocket upgrades.", 405);
@@ -26,7 +42,8 @@ export async function validateLiveSocketRequest(
     return invalidLiveRequest("WebSocket upgrade required.", 426);
   }
   const origin = request.headers.get("origin");
-  if (origin && origin !== allowedOrigin) {
+  const allowed = Array.isArray(allowedOrigins) ? allowedOrigins : [allowedOrigins];
+  if (origin && !allowed.includes(origin)) {
     return invalidLiveRequest("Live transport origin is not allowed.", 403);
   }
   const questId = parseLiveQuestId(new URL(request.url));

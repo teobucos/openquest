@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { validateLiveSocketRequest } from "../src/liveScope";
+import { resolveAllowedLiveOrigins, validateLiveSocketRequest } from "../src/liveScope";
 
 function liveRequest(path: string, origin?: string): Request {
   const headers = new Headers({ upgrade: "websocket" });
@@ -59,5 +59,68 @@ describe("OpenQuest live socket scope validation", () => {
     );
 
     expect(result).toEqual({ questId: undefined });
+  });
+
+  it("accepts any origin from a multi-origin allowlist and rejects the rest", async () => {
+    const allowed = [
+      "https://openquest.acronew.dev",
+      "https://openquest.tailnet.example:8449",
+    ];
+    const first = await validateLiveSocketRequest(
+      liveRequest("/api/live", "https://openquest.acronew.dev"),
+      async () => true,
+      allowed,
+    );
+    const second = await validateLiveSocketRequest(
+      liveRequest("/api/live", "https://openquest.tailnet.example:8449"),
+      async () => true,
+      allowed,
+    );
+    const rejected = await validateLiveSocketRequest(
+      liveRequest("/api/live", "https://evil.example"),
+      async () => true,
+      allowed,
+    );
+
+    expect(first).toEqual({ questId: undefined });
+    expect(second).toEqual({ questId: undefined });
+    if (!(rejected instanceof Response)) throw new Error("Expected an origin rejection response.");
+    expect(rejected.status).toBe(403);
+  });
+});
+
+describe("resolveAllowedLiveOrigins", () => {
+  it("prefers the plural allowlist over the legacy singular origin", () => {
+    expect(
+      resolveAllowedLiveOrigins({
+        OPENQUEST_PUBLIC_ORIGIN: "https://legacy.example",
+        OPENQUEST_PUBLIC_ORIGINS: "https://openquest.acronew.dev, https://openquest.tailnet.example:8449",
+      }),
+    ).toEqual(["https://openquest.acronew.dev", "https://openquest.tailnet.example:8449"]);
+  });
+
+  it("falls back to the legacy singular origin when the plural list is unset", () => {
+    expect(
+      resolveAllowedLiveOrigins({ OPENQUEST_PUBLIC_ORIGIN: "https://legacy.example" }),
+    ).toEqual(["https://legacy.example"]);
+  });
+
+  it("falls back to the legacy singular origin when the plural list is blank", () => {
+    expect(
+      resolveAllowedLiveOrigins({
+        OPENQUEST_PUBLIC_ORIGIN: "https://legacy.example",
+        OPENQUEST_PUBLIC_ORIGINS: "   ",
+      }),
+    ).toEqual(["https://legacy.example"]);
+  });
+
+  it("returns undefined when neither variable is set so callers use same-origin", () => {
+    expect(resolveAllowedLiveOrigins({})).toBeUndefined();
+  });
+
+  it("trims entries and drops empties", () => {
+    expect(
+      resolveAllowedLiveOrigins({ OPENQUEST_PUBLIC_ORIGINS: " https://a.example ,, https://b.example " }),
+    ).toEqual(["https://a.example", "https://b.example"]);
   });
 });

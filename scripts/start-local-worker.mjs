@@ -25,6 +25,22 @@ const publicUrl = publicUrlValue ? new URL(publicUrlValue) : undefined;
 if (publicUrl && !["http:", "https:"].includes(publicUrl.protocol)) {
   throw new Error("OPENQUEST_PUBLIC_URL must use HTTP or HTTPS.");
 }
+const publicOriginsValue = process.env.OPENQUEST_PUBLIC_ORIGINS?.trim();
+if (publicOriginsValue) {
+  for (const origin of publicOriginsValue.split(",")) {
+    const trimmed = origin.trim();
+    if (!trimmed) continue;
+    let parsed;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new Error("OPENQUEST_PUBLIC_ORIGINS entries must use HTTP or HTTPS.");
+    }
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      throw new Error("OPENQUEST_PUBLIC_ORIGINS entries must use HTTP or HTTPS.");
+    }
+  }
+}
 const miniflare = new Miniflare({
   ...convertV4MiniflareOptions({
     workers: [{
@@ -32,6 +48,7 @@ const miniflare = new Miniflare({
       bindings: {
         ...runtimeOptions.bindings,
         ...(publicUrl ? { OPENQUEST_PUBLIC_ORIGIN: publicUrl.origin } : {}),
+        ...(publicOriginsValue ? { OPENQUEST_PUBLIC_ORIGINS: publicOriginsValue } : {}),
       },
       modules: true,
       name: "openquest-local",
