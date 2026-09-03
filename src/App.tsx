@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { observe, observeQuestSlug } from "./api";
+import { Brand } from "./Brand";
 import { ControlCenter } from "./dashboard/ControlCenter";
 import {
   useRouteState,
@@ -15,7 +16,7 @@ function Loading() {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <a className="brand" href="/" aria-label="OpenQuest network"><span className="brand-mark">OQ</span>OPENQUEST</a>
+        <Brand />
         <span className="header-context">PUBLIC NETWORK / CONTROL ROOM</span>
       </header>
       <main className="loading">Loading public state…</main>
@@ -27,7 +28,7 @@ function ErrorPanel({ message, retry }: { message: string; retry: () => void }) 
   return (
     <div className="app-shell">
       <header className="site-header">
-        <a className="brand" href="/" aria-label="OpenQuest network"><span className="brand-mark">OQ</span>OPENQUEST</a>
+        <Brand />
         <span className="header-context">PUBLIC NETWORK / CONTROL ROOM</span>
       </header>
       <main className="error-panel"><p>{message}</p><button type="button" onClick={retry}>Try again</button></main>
@@ -50,7 +51,7 @@ export default function App() {
     return (
       <div className="app-shell">
         <header className="site-header">
-          <a className="brand" href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })} aria-label="OpenQuest network"><span className="brand-mark">OQ</span>OPENQUEST</a>
+          <Brand onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })} />
           <span className="header-context">PUBLIC NETWORK / CONTROL ROOM</span>
         </header>
         <main className="not-found-panel">

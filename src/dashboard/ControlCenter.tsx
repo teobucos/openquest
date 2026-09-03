@@ -6,6 +6,7 @@ import {
   type FormEvent,
 } from "react";
 import { createQuest } from "../api";
+import { Brand } from "../Brand";
 import type { ObserveResponse } from "../contracts";
 import { readableError } from "../useRemoteData";
 import type { WebMCPToolsState } from "../useWebMCPTools";
@@ -212,7 +213,7 @@ export function ControlCenter({
   return (
     <div className="app-shell">
       <header className="site-header">
-        <a className="brand" href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })} aria-label="OpenQuest network"><span className="brand-mark">OQ</span>OPENQUEST</a>
+        <Brand onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })} />
         <div className="header-operations">
           <span className="header-context">{scopedQuest ? `QUEST / ${scopedQuest.title}` : "PUBLIC NETWORK / CONTROL ROOM"}</span>
           <ToolStatus tools={tools} />

@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 const persistencePath = process.env.OPENQUEST_PERSIST_PATH;
 
 export default defineConfig({
+  publicDir: "src/public",
   plugins: [
     react(),
     cloudflare(
