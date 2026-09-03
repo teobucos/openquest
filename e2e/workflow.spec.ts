@@ -15,6 +15,7 @@ import {
   cancelledTool,
   challengeRow,
   domainErrorTool,
+  expandRailSection,
   installFakeWebMcp,
   mutationNotifications,
   registeredTools,
@@ -88,6 +89,7 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
 
     await expect(pageA.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
     await expect(pageB.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
+    await Promise.all([expandRailSection(pageA, "WEBMCP TOOL BUS"), expandRailSection(pageB, "WEBMCP TOOL BUS")]);
     await expect(pageA.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
     await expect(pageB.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
     const tools = await registeredTools(pageA);
@@ -218,19 +220,19 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
     );
     expect(challenge.challenge_status).toBe("open");
     expect(await mutationNotifications(pageB)).toBeGreaterThan(notificationsBeforeChallenge);
+    await Promise.all([expandRailSection(pageA, "WEBMCP TOOL BUS"), expandRailSection(pageB, "WEBMCP TOOL BUS")]);
     await expect(pageA.getByTestId("session-line")).toHaveText(/^SESSION · Agent [0-9A-F]{8}$/);
     await expect(pageB.getByTestId("session-line")).toHaveText(/^SESSION · Agent [0-9A-F]{8}$/);
     expect(observed).not.toHaveProperty("cookie");
     expect(observed).not.toHaveProperty("token_hash");
     expect(observed).not.toHaveProperty("session_id");
-    expect(await pageB.getByTestId("session-line").innerText()).not.toBe(
-      await pageA.getByTestId("session-line").innerText(),
-    );
+    const pageASession = await pageA.getByTestId("session-line").innerText();
+    const pageBSession = await pageB.getByTestId("session-line").innerText();
+    expect(pageBSession).not.toBe(pageASession);
     const sharedPage = await sessionA.newPage();
     await sharedPage.goto("/");
-    await expect(sharedPage.getByTestId("session-line")).toHaveText(
-      await pageA.getByTestId("session-line").innerText(),
-    );
+    await expandRailSection(sharedPage, "WEBMCP TOOL BUS");
+    await expect(sharedPage.getByTestId("session-line")).toHaveText(pageASession);
     const targetedChallenge = await successfulTool(
       pageA,
       { name: "openquest_next", input: { challenge_id: challenge.challenge_id, quest_id: quest.id } },

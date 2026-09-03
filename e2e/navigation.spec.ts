@@ -4,7 +4,7 @@ import {
   CreateQuestResponseSchema,
   ObserveResponseSchema,
 } from "../src/contracts";
-import { installFakeWebMcp, registeredTools } from "./helpers";
+import { expandRailSection, installFakeWebMcp, registeredTools } from "./helpers";
 
 async function mockDemoQuestProjection(page: Page, community: boolean): Promise<void> {
   await page.route("**/api/world*", async (route) => {
@@ -214,12 +214,31 @@ test("the command center follows the system color scheme", async ({ page }) => {
   await expect(page.locator("meta[name=color-scheme]")).toHaveAttribute("content", "light dark");
 
   await page.emulateMedia({ colorScheme: "light" });
-  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(230, 238, 240)");
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(215, 228, 231)");
   expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe("rgb(8, 16, 18)");
 
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(9, 12, 13)");
   expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe("rgb(230, 232, 232)");
+});
+
+test("the context rail keeps Quests open and collapses the other sections", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "QUESTS" })).toBeVisible();
+  await expect(page.locator("aside.command-rail details.quest-list-panel")).toHaveJSProperty("open", true);
+  await expect(page.locator("aside.command-rail details.contributor-panel")).toHaveJSProperty("open", false);
+  await expect(page.locator("aside.command-rail details.webmcp-panel")).toHaveJSProperty("open", false);
+  await expect(page.getByTestId("session-line")).toBeHidden();
+
+  await expandRailSection(page, "WEBMCP TOOL BUS");
+  await expect(page.getByTestId("session-line")).toBeVisible();
+  await expandRailSection(page, "RECENT CONTRIBUTORS");
+  await expect(page.locator(".contributor-list")).toBeVisible();
+
+  await page.getByRole("heading", { name: "QUESTS" }).click();
+  await expect(page.locator("aside.command-rail details.quest-list-panel")).toHaveJSProperty("open", false);
+  await page.getByRole("heading", { name: "QUESTS" }).click();
+  await expect(page.locator("aside.command-rail details.quest-list-panel")).toHaveJSProperty("open", true);
 });
 
 test("long public stream text, filters, and activity stay readable at target viewports", async ({ browser }) => {

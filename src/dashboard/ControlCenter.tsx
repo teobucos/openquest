@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import { createQuest } from "../api";
 import { Brand } from "../Brand";
@@ -163,8 +164,8 @@ function CreateQuestForm({
     }
   }
   return (
-    <details className="create-panel" open={open} onToggle={(event) => onOpenChange(event.currentTarget.open)}>
-      <summary><span>CREATE A QUEST</span><span aria-hidden="true">+</span></summary>
+    <details className="ops-panel rail-section create-panel" open={open} onToggle={(event) => onOpenChange(event.currentTarget.open)}>
+      <summary className="panel-heading"><h2>CREATE A QUEST</h2><span aria-hidden="true">+</span></summary>
       <div className="create-body">
         <p className="create-safety">Everything on OpenQuest is public. Do not submit confidential, proprietary, personal, credential, or secret information.</p>
         <form className="quest-form" onSubmit={submit}>
@@ -358,10 +359,34 @@ function ActivityPanel({
   );
 }
 
+function RailSection({
+  children,
+  className,
+  defaultOpen = false,
+  meta,
+  title,
+}: {
+  children: ReactNode;
+  className: string;
+  defaultOpen?: boolean;
+  meta?: string;
+  title: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <details className={`ops-panel rail-section ${className}`} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="panel-heading">
+        <h2>{title}</h2>
+        {meta ? <span>{meta}</span> : null}
+      </summary>
+      <div className="rail-section-body">{children}</div>
+    </details>
+  );
+}
+
 function ContributorPanel({ data }: { data: ObserveResponse }) {
   return (
-    <section className="ops-panel contributor-panel">
-      <div className="panel-heading"><h2>RECENT CONTRIBUTORS</h2><span>{data.contributor_count} TOTAL</span></div>
+    <RailSection className="contributor-panel" title="RECENT CONTRIBUTORS" meta={`${data.contributor_count} TOTAL`}>
       <div className="contributor-list">
         {data.recent_contributors.map((contributor) => (
           <div className="contributor-row" key={contributor.actor_label}>
@@ -372,7 +397,7 @@ function ContributorPanel({ data }: { data: ObserveResponse }) {
         ))}
         {data.recent_contributors.length === 0 ? <p className="empty-copy">No durable contributor activity yet.</p> : null}
       </div>
-    </section>
+    </RailSection>
   );
 }
 
@@ -415,8 +440,7 @@ function WebMcpPanel({
   const state = webMcpSurfaceState(tools);
   const sessionLine = viewer ? `SESSION · ${viewer.actor_label}` : "SESSION · NOT ESTABLISHED";
   return (
-    <section className="ops-panel webmcp-panel">
-      <div className="panel-heading"><h2>WEBMCP TOOL BUS</h2><span>{webMcpPanelLabel(state)}</span></div>
+    <RailSection className="webmcp-panel" title="WEBMCP TOOL BUS" meta={webMcpPanelLabel(state)}>
       <p className="session-line" data-testid="session-line" title={SESSION_HELP_TEXT}>{sessionLine}</p>
       <p className="agent-instruction">Use with an agent: “{prompt}”</p>
       <div className="tool-list">
@@ -441,14 +465,13 @@ function WebMcpPanel({
           {tools.error ? <p className="webmcp-error">{tools.error}</p> : null}
         </details>
       )}
-    </section>
+    </RailSection>
   );
 }
 
 function QuestList({ data, route, onNavigate }: { data: ObserveResponse; route: RouteState; onNavigate: RouteNavigationHandler }) {
   return (
-    <section className="ops-panel quest-list-panel">
-      <div className="panel-heading"><h2>QUESTS</h2><span>{data.quests.length} VISIBLE</span></div>
+    <RailSection className="quest-list-panel" title="QUESTS" meta={`${data.quests.length} VISIBLE`} defaultOpen>
       <div className="quest-list">
         {data.quests.map((quest, index) => {
           const total = quest.counts.open + quest.counts.awaiting_review + quest.counts.resolved;
@@ -467,7 +490,7 @@ function QuestList({ data, route, onNavigate }: { data: ObserveResponse; route: 
         })}
         {data.quests.length === 0 ? <p className="empty-copy">No active Quests.</p> : null}
       </div>
-    </section>
+    </RailSection>
   );
 }
 
@@ -475,8 +498,7 @@ function QuestContext({ quest, data }: { quest: ObserveResponse["quests"][number
   if (!quest) return null;
   const results = data.work_stream.filter((item) => item.stream_state === "resolved").slice(0, 3);
   return (
-    <section className="ops-panel quest-context-panel">
-      <div className="panel-heading"><h2>QUEST CONTEXT</h2><span>{quest.is_demo ? "DEMO" : quest.organization ? "PROVENANCE" : "COMMUNITY"}</span></div>
+    <RailSection className="quest-context-panel" title="QUEST CONTEXT" meta={quest.is_demo ? "DEMO" : quest.organization ? "PROVENANCE" : "COMMUNITY"} defaultOpen>
       <div className="quest-context-body">
         <p>{quest.description || quest.goal}</p>
         {quest.organization ? <p className="provenance-copy">{demoPrefix(quest)}{quest.organization.name} · {quest.organization.verification_status}{quest.organization.ror_id ? ` · ${quest.organization.ror_id}` : ""}</p> : null}
@@ -484,6 +506,6 @@ function QuestContext({ quest, data }: { quest: ObserveResponse["quests"][number
         {results.map((item) => <p className="result-summary" key={item.challenge.id}>{item.contribution?.summary}</p>)}
         {results.length === 0 ? <p className="empty-copy">No accepted results yet.</p> : null}
       </div>
-    </section>
+    </RailSection>
   );
 }

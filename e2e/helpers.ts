@@ -201,3 +201,13 @@ export async function mutationNotifications(page: Page): Promise<number> {
 export function challengeRow(page: Page, title: string) {
   return page.locator(".work-row").filter({ hasText: title });
 }
+
+export async function expandRailSection(page: Page, title: string): Promise<void> {
+  const section = page.locator("aside.command-rail details").filter({
+    has: page.getByRole("heading", { name: title, exact: true }),
+  });
+  await expect(section).toBeVisible();
+  const opened = await section.evaluate((node) => node instanceof HTMLDetailsElement && node.open);
+  if (!opened) await section.locator(":scope > summary").click();
+  await expect(section).toHaveJSProperty("open", true);
+}
