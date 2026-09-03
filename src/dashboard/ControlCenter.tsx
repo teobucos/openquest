@@ -1,7 +1,6 @@
 import {
   useEffect,
   useMemo,
-  useReducer,
   useRef,
   useState,
   type FormEvent,
@@ -10,7 +9,26 @@ import { createQuest } from "../api";
 import type { ObserveResponse } from "../contracts";
 import { readableError } from "../useRemoteData";
 import type { WebMCPToolsState } from "../useWebMCPTools";
+import {
+  SESSION_HELP_TEXT,
+  WEBMCP_CHROME_DOCS_URL,
+  WEBMCP_UNAVAILABLE_GUIDANCE,
+  webMcpHeaderLabel,
+  webMcpPanelLabel,
+  webMcpRegistrationFact,
+  webMcpSurfaceState,
+} from "../webmcpStatus";
 import { ChallengeInspector } from "./ChallengeInspector";
+import {
+  LIVE_EFFECT_MS,
+  canonicalMetricDeltas,
+  canonicalMetricSnapshot,
+  changedWorkChallengeIds,
+  dashboardScopeKey,
+  emptyMetricDeltas,
+  formatMetricDelta,
+  type CanonicalMetricDeltas,
+} from "./canonicalHighlights";
 import type { RouteNavigationHandler, RouteState, WorkFilter } from "./navigation";
 
 type LiveStatus = "connecting" | "live" | "reconnecting" | "degraded";
@@ -28,13 +46,8 @@ function LiveIndicator({ status, error }: { status: LiveStatus; error: string | 
 }
 
 function ToolStatus({ tools }: { tools: WebMCPToolsState }) {
-  const label = tools.error
-    ? "WebMCP · registration failed"
-    : tools.registered
-      ? "WebMCP · 5 tools ready"
-      : tools.supported
-        ? "WebMCP · registering"
-        : "WebMCP · browser unsupported";
+  const state = webMcpSurfaceState(tools);
+  const label = webMcpHeaderLabel(state);
   return <span className={`tool-status${tools.registered ? " is-ready" : ""}`} title={tools.error ?? label}><span className="status-dot" />{label}</span>;
 }
 
@@ -50,23 +63,21 @@ function streamLabel(state: ObserveResponse["work_stream"][number]["stream_state
 
 interface CanonicalHighlights {
   readonly changedChallengeIds: ReadonlySet<string>;
+  readonly deltas: CanonicalMetricDeltas;
   readonly latestEventSequence: number | null;
   readonly latestSequence: number | null;
 }
 
 const noHighlights: CanonicalHighlights = {
   changedChallengeIds: new Set(),
+  deltas: emptyMetricDeltas,
   latestEventSequence: null,
   latestSequence: null,
 };
 
-function highlightsReducer(_current: CanonicalHighlights, next: CanonicalHighlights): CanonicalHighlights {
-  return next;
-}
-
-function useCanonicalHighlights(data: ObserveResponse): CanonicalHighlights {
-  const [highlights, setHighlights] = useReducer(highlightsReducer, noHighlights);
-  const previous = useRef<ObserveResponse | null>(null);
+function useCanonicalHighlights(data: ObserveResponse, scopeKey: string): CanonicalHighlights {
+  const [highlights, setHighlights] = useState(noHighlights);
+  const previous = useRef<{ data: ObserveResponse; scopeKey: string } | null>(null);
   const clearTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => () => {
@@ -75,33 +86,29 @@ function useCanonicalHighlights(data: ObserveResponse): CanonicalHighlights {
 
   useEffect(() => {
     const preceding = previous.current;
-    previous.current = data;
-    if (!preceding || data.freshness.last_sequence <= preceding.freshness.last_sequence) return;
-
-    const precedingStates = new Map(
-      preceding.work_stream.map((item) => [item.challenge.id, item.stream_state]),
-    );
-    const changedChallengeIds = new Set<string>();
-    for (const item of data.work_stream) {
-      const previousState = precedingStates.get(item.challenge.id);
-      if (previousState !== undefined && previousState !== item.stream_state) {
-        changedChallengeIds.add(item.challenge.id);
-      }
+    previous.current = { data, scopeKey };
+    if (!preceding || preceding.scopeKey !== scopeKey) {
+      if (clearTimer.current !== undefined) window.clearTimeout(clearTimer.current);
+      clearTimer.current = undefined;
+      setHighlights(noHighlights);
+      return;
     }
-    const latestEventSequence = data.activity[0]?.sequence ?? null;
+    if (data.freshness.last_sequence <= preceding.data.freshness.last_sequence) return;
+
     if (clearTimer.current !== undefined) window.clearTimeout(clearTimer.current);
     setHighlights({
-      changedChallengeIds,
-      latestEventSequence,
+      changedChallengeIds: changedWorkChallengeIds(preceding.data.work_stream, data.work_stream),
+      deltas: canonicalMetricDeltas(canonicalMetricSnapshot(preceding.data), canonicalMetricSnapshot(data)),
+      latestEventSequence: data.activity[0]?.sequence ?? null,
       latestSequence: data.freshness.last_sequence,
     });
     const timer = window.setTimeout(() => {
       if (clearTimer.current !== timer) return;
       clearTimer.current = undefined;
       setHighlights(noHighlights);
-    }, 750);
+    }, LIVE_EFFECT_MS);
     clearTimer.current = timer;
-  }, [data]);
+  }, [data, scopeKey]);
 
   return highlights;
 }
@@ -171,9 +178,9 @@ export function ControlCenter({
     ? data.work_stream
     : data.work_stream.filter((item) => item.stream_state === route.filter), [data.work_stream, route.filter]);
   const scopeRoute = (patch: Partial<Pick<RouteState, "filter" | "challengeId">>): RouteState => ({ ...route, ...patch });
-  const eventCount = data.freshness.event_count;
   const scopeTitle = scopedQuest ? `OPENQUEST / ${scopedQuest.title}` : "OPENQUEST CONTROL CENTER";
-  const highlights = useCanonicalHighlights(data);
+  const scopeKey = dashboardScopeKey(route.scope, scopedQuest?.id ?? null);
+  const highlights = useCanonicalHighlights(data, scopeKey);
 
   return (
     <div className="app-shell">
@@ -192,44 +199,21 @@ export function ControlCenter({
           <div className="scope-actions"><LiveIndicator status={liveStatus} error={refreshError} /><span className={`sync-stamp${highlights.latestSequence === data.freshness.last_sequence ? " is-fresh" : ""}`} data-testid="latest-event-indicator">LATEST EVENT #{data.freshness.last_sequence}</span></div>
         </section>
 
-        <section className="telemetry-rail" aria-label="OpenQuest truthful totals">
-          <Metric label="Open" detail="Challenges accepting work" value={data.totals.open} tone="attention" />
-          <Metric label="Needs Review" detail="Pending Contributions" value={data.totals.awaiting_review} tone="review" />
-          <Metric label="Resolved" detail="Accepted Contributions" value={data.totals.resolved} tone="active" />
-          <Metric label="Contributors" detail="Durable public activity" value={data.contributor_count} tone="active" />
-          <Metric label="Public Events" detail={`Latest event #${data.freshness.last_sequence}`} value={eventCount} tone="neutral" />
-        </section>
+        <TelemetryRail data={data} deltas={highlights.deltas} />
 
         <div className="control-grid">
-          <section className="ops-panel work-stream-panel" aria-labelledby="work-stream-title">
-            <div className="panel-heading"><h2 id="work-stream-title">WORK STREAM</h2><span>{visibleWork.length} SHOWN</span></div>
-            <div className="work-filters" aria-label="Filter work stream">
-              {filters.map((filter) => <button key={filter.value} type="button" className={route.filter === filter.value ? "is-selected" : ""} onClick={() => navigate(scopeRoute({ filter: filter.value }))}>{filter.label}</button>)}
-            </div>
-            <div className="work-stream" aria-live="polite">
-              {visibleWork.map((item) => (
-                <button className={`work-row${highlights.changedChallengeIds.has(item.challenge.id) ? " is-fresh" : ""}`} type="button" key={`${item.stream_state}-${item.challenge.id}`} data-state={item.stream_state} onClick={() => navigate(scopeRoute({ challengeId: item.challenge.id }))}>
-                  <span className="work-state">{streamLabel(item.stream_state)}</span>
-                  <span className="work-copy"><strong>{item.challenge.title}</strong>{route.scope.kind === "network" ? <span className="work-quest-title">{demoPrefix(item.quest)}{item.quest.title}</span> : null}<span className="work-challenge-description">{item.challenge.description}</span>{item.contribution ? <small>{item.stream_state === "resolved" ? "RESULT: " : "CONTRIBUTION: "}{item.contribution.summary}</small> : null}</span>
-                  <time dateTime={item.stream_state === "resolved" ? item.challenge.updated_at : item.challenge.created_at}>{timestamp(item.stream_state === "resolved" ? item.challenge.updated_at : item.challenge.created_at)}</time>
-                </button>
-              ))}
-              {visibleWork.length === 0 ? <p className="empty-console">No work matches this filter.</p> : null}
-            </div>
-          </section>
-
-          <section className="ops-panel activity-console" aria-labelledby="activity-title">
-            <div className="panel-heading"><h2 id="activity-title">PUBLIC ACTIVITY</h2><span>LATEST EVENT #{data.freshness.last_sequence}</span></div>
-            <div className="activity-list" data-testid="activity-list" aria-live="polite" aria-relevant="additions text">
-              {data.activity.map((event) => <div className={`activity-row${highlights.latestEventSequence === event.sequence ? " is-fresh" : ""}`} key={event.sequence}><span className="activity-icon">#{String(event.sequence).padStart(4, "0")}</span><div><strong>{event.summary}</strong><span className="activity-meta"><span>{event.actor_label ?? "OpenQuest"}</span><span>{event.event_type.replace(".", " / ")}</span></span></div><time dateTime={event.created_at}>{timestamp(event.created_at)}</time></div>)}
-              {data.activity.length === 0 ? <p className="empty-copy">No public activity yet.</p> : null}
-            </div>
-          </section>
-
+          <WorkStreamPanel
+            highlights={highlights}
+            navigate={navigate}
+            route={route}
+            scopeRoute={scopeRoute}
+            visibleWork={visibleWork}
+          />
+          <ActivityPanel data={data} latestEventSequence={highlights.latestEventSequence} />
           <aside className="command-rail" aria-label="OpenQuest context">
             {route.scope.kind === "network" ? <QuestList data={data} route={route} onNavigate={onNavigate} /> : <QuestContext quest={scopedQuest} data={data} />}
-            <section className="ops-panel contributor-panel"><div className="panel-heading"><h2>RECENT CONTRIBUTORS</h2><span>{data.contributor_count} TOTAL</span></div><div className="contributor-list">{data.recent_contributors.map((contributor) => <div className="contributor-row" key={contributor.actor_label}><span className="contributor-avatar">{contributor.actor_label.slice(-2)}</span><span className="contributor-copy"><strong>{contributor.actor_label}</strong><span>{contributor.last_summary}</span></span><span className="recent-badge">{contributor.activity_count} EVT</span></div>)}{data.recent_contributors.length === 0 ? <p className="empty-copy">No durable contributor activity yet.</p> : null}</div></section>
-            <section className="ops-panel webmcp-panel"><div className="panel-heading"><h2>WEBMCP</h2><span>{tools.registered ? "READY" : "UNAVAILABLE"}</span></div><p className="agent-instruction">Use with an agent: “{route.scope.kind === "quest" ? "Help move this Quest forward." : "Help with whatever is most useful."}”</p><code>openquest_observe · openquest_next · openquest_submit · openquest_review · openquest_propose</code></section>
+            <ContributorPanel data={data} />
+            <WebMcpPanel tools={tools} viewer={data.viewer} prompt={route.scope.kind === "quest" ? "Help move this Quest forward." : "Help with whatever is most useful."} />
             {route.scope.kind === "network" ? <CreateQuestForm onCreated={(slug) => navigate({ scope: { kind: "quest", slug }, filter: "all", challengeId: null })} /> : null}
           </aside>
         </div>
@@ -240,8 +224,153 @@ export function ControlCenter({
   );
 }
 
-function Metric({ label, detail, value, tone }: { label: string; detail: string; value: number; tone: string }) {
-  return <div className="telemetry-cell" data-tone={tone}><span>{label}</span><small>{detail}</small><strong>{value}</strong></div>;
+function TelemetryRail({ data, deltas }: { data: ObserveResponse; deltas: CanonicalMetricDeltas }) {
+  return (
+    <section className="telemetry-rail" aria-label="OpenQuest truthful totals">
+      <Metric label="Open" metric="open" detail="Challenges accepting work" value={data.totals.open} delta={deltas.open} tone="attention" />
+      <Metric label="Needs Review" metric="awaiting_review" detail="Pending Contributions" value={data.totals.awaiting_review} delta={deltas.awaiting_review} tone="review" />
+      <Metric label="Resolved" metric="resolved" detail="Accepted Contributions" value={data.totals.resolved} delta={deltas.resolved} tone="active" />
+      <Metric label="Contributors" metric="contributors" detail="Durable public activity" value={data.contributor_count} delta={deltas.contributor_count} tone="active" />
+      <Metric label="Public Events" metric="events" detail={`Latest event #${data.freshness.last_sequence}`} value={data.freshness.event_count} delta={deltas.event_count} tone="neutral" />
+    </section>
+  );
+}
+
+function WorkStreamPanel({
+  highlights,
+  navigate,
+  route,
+  scopeRoute,
+  visibleWork,
+}: {
+  highlights: CanonicalHighlights;
+  navigate: (route: RouteState) => void;
+  route: RouteState;
+  scopeRoute: (patch: Partial<Pick<RouteState, "filter" | "challengeId">>) => RouteState;
+  visibleWork: ObserveResponse["work_stream"];
+}) {
+  return (
+    <section className="ops-panel work-stream-panel" aria-labelledby="work-stream-title">
+      <div className="panel-heading"><h2 id="work-stream-title">WORK STREAM</h2><span>{visibleWork.length} SHOWN</span></div>
+      <div className="work-filters" aria-label="Filter work stream">
+        {filters.map((filter) => <button key={filter.value} type="button" className={route.filter === filter.value ? "is-selected" : ""} onClick={() => navigate(scopeRoute({ filter: filter.value }))}>{filter.label}</button>)}
+      </div>
+      <div className="work-stream" aria-live="polite">
+        {visibleWork.map((item) => {
+          const stamp = item.stream_state === "resolved" ? item.challenge.updated_at : item.challenge.created_at;
+          return (
+            <button className={`work-row${highlights.changedChallengeIds.has(item.challenge.id) ? " is-fresh" : ""}`} type="button" key={`${item.stream_state}-${item.challenge.id}`} data-state={item.stream_state} onClick={() => navigate(scopeRoute({ challengeId: item.challenge.id }))}>
+              <span className="work-state">{streamLabel(item.stream_state)}</span>
+              <span className="work-copy"><strong>{item.challenge.title}</strong>{route.scope.kind === "network" ? <span className="work-quest-title">{demoPrefix(item.quest)}{item.quest.title}</span> : null}<span className="work-challenge-description">{item.challenge.description}</span>{item.contribution ? <small>{item.stream_state === "resolved" ? "RESULT: " : "CONTRIBUTION: "}{item.contribution.summary}</small> : null}</span>
+              <time dateTime={stamp}>{timestamp(stamp)}</time>
+            </button>
+          );
+        })}
+        {visibleWork.length === 0 ? <p className="empty-console">No work matches this filter.</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function ActivityPanel({
+  data,
+  latestEventSequence,
+}: {
+  data: ObserveResponse;
+  latestEventSequence: number | null;
+}) {
+  return (
+    <section className="ops-panel activity-console" aria-labelledby="activity-title">
+      <div className="panel-heading"><h2 id="activity-title">PUBLIC ACTIVITY</h2><span>LATEST EVENT #{data.freshness.last_sequence}</span></div>
+      <div className="activity-list" data-testid="activity-list" aria-live="polite" aria-relevant="additions text">
+        {data.activity.map((event) => <div className={`activity-row${latestEventSequence === event.sequence ? " is-fresh" : ""}`} key={event.sequence}><span className="activity-icon">#{String(event.sequence).padStart(4, "0")}</span><div><strong>{event.summary}</strong><span className="activity-meta"><span>{event.actor_label ?? "OpenQuest"}</span><span>{event.event_type.replace(".", " / ")}</span></span></div><time dateTime={event.created_at}>{timestamp(event.created_at)}</time></div>)}
+        {data.activity.length === 0 ? <p className="empty-copy">No public activity yet.</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function ContributorPanel({ data }: { data: ObserveResponse }) {
+  return (
+    <section className="ops-panel contributor-panel">
+      <div className="panel-heading"><h2>RECENT CONTRIBUTORS</h2><span>{data.contributor_count} TOTAL</span></div>
+      <div className="contributor-list">
+        {data.recent_contributors.map((contributor) => (
+          <div className="contributor-row" key={contributor.actor_label}>
+            <span className="contributor-avatar">{contributor.actor_label.slice(-2)}</span>
+            <span className="contributor-copy"><strong>{contributor.actor_label}</strong><span>{contributor.last_summary}</span></span>
+            <span className="recent-badge">{contributor.activity_count} EVT</span>
+          </div>
+        ))}
+        {data.recent_contributors.length === 0 ? <p className="empty-copy">No durable contributor activity yet.</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function Metric({
+  label,
+  metric,
+  detail,
+  value,
+  delta,
+  tone,
+}: {
+  label: string;
+  metric: string;
+  detail: string;
+  value: number;
+  delta: number | null;
+  tone: string;
+}) {
+  return (
+    <div className="telemetry-cell" data-metric={metric} data-tone={tone}>
+      <span>{label}</span>
+      <small>{detail}</small>
+      <strong>
+        <span className="metric-value">{value}</span>
+        {delta !== null ? <span className="metric-delta" data-testid={`metric-delta-${metric}`}>{formatMetricDelta(delta)}</span> : null}
+      </strong>
+    </div>
+  );
+}
+
+function WebMcpPanel({
+  tools,
+  viewer,
+  prompt,
+}: {
+  tools: WebMCPToolsState;
+  viewer: ObserveResponse["viewer"];
+  prompt: string;
+}) {
+  const state = webMcpSurfaceState(tools);
+  const sessionLine = viewer ? `SESSION · ${viewer.actor_label}` : "SESSION · NOT ESTABLISHED";
+  return (
+    <section className="ops-panel webmcp-panel">
+      <div className="panel-heading"><h2>WEBMCP</h2><span>{webMcpPanelLabel(state)}</span></div>
+      <p className="session-line" data-testid="session-line" title={SESSION_HELP_TEXT}>{sessionLine}</p>
+      <p className="agent-instruction">Use with an agent: “{prompt}”</p>
+      <code>openquest_observe · openquest_next · openquest_submit · openquest_review · openquest_propose</code>
+      {tools.registered ? null : (
+        <details className="webmcp-diagnostics">
+          <summary>WebMCP diagnostics</summary>
+          <ul>
+            <li>Secure context: {tools.secureContext ? "YES" : "NO"}</li>
+            <li>document.modelContext: {tools.modelContextDetected ? "DETECTED" : "NOT DETECTED"}</li>
+            <li>Registration: {webMcpRegistrationFact(state)}</li>
+          </ul>
+          {tools.modelContextDetected ? null : (
+            <p>
+              {WEBMCP_UNAVAILABLE_GUIDANCE}{" "}
+              <a href={WEBMCP_CHROME_DOCS_URL} rel="noreferrer" target="_blank">Chrome WebMCP documentation</a>
+            </p>
+          )}
+          {tools.error ? <p className="webmcp-error">{tools.error}</p> : null}
+        </details>
+      )}
+    </section>
+  );
 }
 
 function QuestList({ data, route, onNavigate }: { data: ObserveResponse; route: RouteState; onNavigate: RouteNavigationHandler }) {

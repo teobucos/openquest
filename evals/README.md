@@ -10,7 +10,9 @@ The fixture covers the canonical agent intent cases:
 - observe public state with `openquest_observe`;
 - request automatic useful work with `openquest_next`;
 - retain a canonical known Quest ID when selecting scoped work;
-- propose a Challenge with the closed `openquest_propose` input.
+- propose a Challenge with the closed `openquest_propose` input;
+- request a specific pending Contribution Review with `contribution_id`;
+- request a specific open Challenge with `challenge_id`.
 
 After starting a WebMCP-capable local or hosted page, run a browser evaluation:
 

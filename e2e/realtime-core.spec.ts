@@ -50,7 +50,7 @@ async function installSocketTracking(page: import("@playwright/test").Page): Pro
       const text = document.body.textContent ?? "";
       const openTotal = Array.from(document.querySelectorAll(".telemetry-cell"))
         .find((cell) => cell.textContent?.includes("Challenges accepting work"))
-        ?.querySelector("strong")?.textContent;
+        ?.querySelector(".metric-value")?.textContent;
       if (
         text.includes("NETWORK ACTIVITY SNAPSHOT")
         || text.includes("NETWORK WORK SNAPSHOT")
@@ -125,7 +125,7 @@ async function expectScopeSnapshot(
 ): Promise<void> {
   await expect(page.locator("#scope-title")).toHaveText(heading);
   await expect(page.getByTestId("latest-event-indicator")).toContainText(`#${marker.latestSequence}`);
-  await expect(page.locator(".telemetry-cell").filter({ hasText: "Challenges accepting work" }).locator("strong")).toHaveText(String(marker.openTotal));
+  await expect(page.locator(".telemetry-cell").filter({ hasText: "Challenges accepting work" }).locator(".metric-value")).toHaveText(String(marker.openTotal));
 }
 
 async function expectNoNetworkSnapshot(page: import("@playwright/test").Page): Promise<void> {

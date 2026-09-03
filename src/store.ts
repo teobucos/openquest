@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { EvidenceListSchema, type ApiErrorResponse } from "./contracts";
+import { EvidenceListSchema, type ApiErrorResponse, type GetNextWorkInput } from "./contracts";
 import { publicActorLabel, type ActorIdentity } from "./identity";
 
 interface OrganizationRow {
@@ -466,8 +466,214 @@ async function requireActiveQuest(db: D1Database, questId: string) {
   const quest = await db.prepare("SELECT id FROM quests WHERE id = ? AND status = 'active'").bind(questId).first<IdRow>();
   if (!quest) storeFail(409, "quest_unavailable", "This Quest is not active.", nextAction("Choose another active Quest."));
 }
-export async function nextWork(db: D1Database, actor: ActorIdentity | null, input: { quest_id?: string; mode?: "any" | "contribute" | "review" }) {
+interface WorkQuestRow extends OrganizationRow {
+  quest_id: string;
+  quest_is_demo: number;
+  quest_slug: string;
+  quest_title: string;
+  quest_goal: string;
+  quest_description: string;
+  challenge_id: string;
+  challenge_title: string;
+  challenge_description: string;
+}
+
+interface TargetedChallengeRow extends WorkQuestRow {
+  challenge_status: ChallengeRow["status"];
+  quest_status: QuestRow["status"];
+}
+
+interface TargetedReviewRow extends ContributionDetailRow, OrganizationRow {
+  quest_status: QuestRow["status"];
+}
+
+function presentWorkQuest(row: WorkQuestRow) {
+  return {
+    id: row.quest_id,
+    slug: row.quest_slug,
+    title: row.quest_title,
+    goal: row.quest_goal,
+    description: row.quest_description,
+    is_demo: row.quest_is_demo === 1,
+    organization: presentOrganization(row),
+  };
+}
+
+function presentWorkChallenge(row: Pick<WorkQuestRow, "challenge_id" | "challenge_title" | "challenge_description">) {
+  return { id: row.challenge_id, title: row.challenge_title, description: row.challenge_description };
+}
+
+function nextContributionWork(row: WorkQuestRow, whyNow: string) {
+  return {
+    status: "work_available" as const,
+    work_type: "contribute" as const,
+    quest: presentWorkQuest(row),
+    challenge: presentWorkChallenge(row),
+    why_now: whyNow,
+    done_when: "Submit useful public work with openquest_submit.",
+  };
+}
+
+function nextReviewWork(row: ContributionDetailRow & OrganizationRow, whyNow: string) {
+  return {
+    status: "work_available" as const,
+    work_type: "review" as const,
+    quest: presentWorkQuest(row),
+    challenge: presentWorkChallenge(row),
+    contribution: {
+      id: row.id,
+      summary: row.summary,
+      content: row.content,
+      evidence: parseEvidence(row.evidence_json),
+    },
+    why_now: whyNow,
+    done_when: "Independently check the work and call openquest_review.",
+  };
+}
+
+async function targetedChallengeWork(
+  db: D1Database,
+  input: { challenge_id: string; quest_id?: string },
+) {
+  const row = await db.prepare(
+    "SELECT q.id AS quest_id, q.status AS quest_status, q.is_demo AS quest_is_demo, q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description, h.id AS challenge_id, h.title AS challenge_title, h.description AS challenge_description, h.status AS challenge_status, "
+      + organizationSelect
+      + " FROM challenges h JOIN quests q ON q.id = h.quest_id"
+      + organizationJoin
+      + " WHERE h.id = ?",
+  ).bind(input.challenge_id).first<TargetedChallengeRow>();
+  if (!row) {
+    storeFail(
+      409,
+      "challenge_unavailable",
+      "This Challenge does not exist.",
+      nextAction("Choose a current open Challenge ID."),
+    );
+  }
+  if (input.quest_id && row.quest_id !== input.quest_id) {
+    storeFail(
+      409,
+      "challenge_unavailable",
+      "This Challenge does not belong to the requested Quest.",
+      nextAction("Use the Challenge ID from the intended Quest."),
+    );
+  }
+  if (row.quest_status !== "active") {
+    storeFail(
+      409,
+      "challenge_unavailable",
+      "This Challenge belongs to a Quest that is not active.",
+      nextAction("Choose another active Quest."),
+    );
+  }
+  if (row.challenge_status === "awaiting_review") {
+    storeFail(
+      409,
+      "challenge_unavailable",
+      "This Challenge is already awaiting Review.",
+      nextAction("Find another open Challenge or Review the pending Contribution."),
+    );
+  }
+  if (row.challenge_status === "resolved") {
+    storeFail(
+      409,
+      "challenge_unavailable",
+      "This Challenge is already resolved.",
+      nextAction("Find another open Challenge."),
+    );
+  }
+  if (row.challenge_status !== "open") {
+    storeFail(
+      409,
+      "challenge_unavailable",
+      "This Challenge is no longer open.",
+      nextAction("Find another useful item."),
+    );
+  }
+  return nextContributionWork(row, "This specific open Challenge was requested.");
+}
+
+async function targetedReviewWork(
+  db: D1Database,
+  actor: ActorIdentity | null,
+  input: { contribution_id: string; quest_id?: string },
+) {
+  const row = await db.prepare(
+    "SELECT c.id, c.challenge_id, c.session_id, c.summary, c.content, c.evidence_json, c.status, c.created_at, h.title AS challenge_title, h.description AS challenge_description, h.status AS challenge_status, q.id AS quest_id, q.status AS quest_status, q.is_demo AS quest_is_demo, q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description, "
+      + organizationSelect
+      + " FROM contributions c JOIN challenges h ON h.id = c.challenge_id JOIN quests q ON q.id = h.quest_id"
+      + organizationJoin
+      + " WHERE c.id = ?",
+  ).bind(input.contribution_id).first<TargetedReviewRow>();
+  if (!row) {
+    storeFail(
+      409,
+      "contribution_unavailable",
+      "This Contribution does not exist.",
+      nextAction("Choose a current pending Contribution ID."),
+    );
+  }
+  if (input.quest_id && row.quest_id !== input.quest_id) {
+    storeFail(
+      409,
+      "contribution_unavailable",
+      "This Contribution does not belong to the requested Quest.",
+      nextAction("Use the Contribution ID from the intended Quest."),
+    );
+  }
+  if (row.quest_status !== "active") {
+    storeFail(
+      409,
+      "contribution_unavailable",
+      "This Contribution belongs to a Quest that is not active.",
+      nextAction("Choose another active Quest."),
+    );
+  }
+  if (row.status === "accepted") {
+    storeFail(
+      409,
+      "contribution_unavailable",
+      "This Contribution has already been accepted.",
+      nextAction("Find another pending Contribution."),
+    );
+  }
+  if (row.status === "challenged") {
+    storeFail(
+      409,
+      "contribution_unavailable",
+      "This Contribution has already been challenged.",
+      nextAction("Find another pending Contribution."),
+    );
+  }
+  if (row.status !== "pending" || row.challenge_status !== "awaiting_review") {
+    storeFail(
+      409,
+      "contribution_unavailable",
+      "This Contribution is no longer awaiting Review.",
+      nextAction("Find another useful item."),
+    );
+  }
+  if (actor && row.session_id === actor.id) {
+    storeFail(
+      403,
+      "self_review_forbidden",
+      "A session cannot Review its own Contribution.",
+      nextAction("Find work created by another session."),
+    );
+  }
+  return nextReviewWork(row, "This specific pending Contribution was requested for independent Review.");
+}
+
+export async function nextWork(
+  db: D1Database,
+  actor: ActorIdentity | null,
+  input: GetNextWorkInput,
+) {
   const mode = input.mode ?? "any";
+  if (input.challenge_id) return targetedChallengeWork(db, { challenge_id: input.challenge_id, quest_id: input.quest_id });
+  if (input.contribution_id) {
+    return targetedReviewWork(db, actor, { contribution_id: input.contribution_id, quest_id: input.quest_id });
+  }
   if (input.quest_id) await requireActiveQuest(db, input.quest_id);
   if (mode !== "contribute") {
     let sql = "SELECT c.id, c.challenge_id, c.session_id, c.summary, c.content, c.evidence_json, c.status, c.created_at, h.title AS challenge_title, h.description AS challenge_description, q.id AS quest_id, q.is_demo AS quest_is_demo, q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description, " + organizationSelect + " FROM contributions c JOIN challenges h ON h.id = c.challenge_id JOIN quests q ON q.id = h.quest_id" + organizationJoin + " WHERE c.status = 'pending' AND h.status = 'awaiting_review' AND q.status = 'active'";
@@ -476,16 +682,18 @@ export async function nextWork(db: D1Database, actor: ActorIdentity | null, inpu
     if (input.quest_id) { sql += " AND q.id = ?"; bindings.push(input.quest_id); }
     sql += " ORDER BY c.created_at ASC, c.id ASC LIMIT 1";
     const review = await db.prepare(sql).bind(...bindings).first<ContributionDetailRow & OrganizationRow>();
-    if (review) return { status: "work_available" as const, work_type: "review" as const, quest: { id: review.quest_id, slug: review.quest_slug, title: review.quest_title, goal: review.quest_goal, description: review.quest_description, is_demo: review.quest_is_demo === 1, organization: presentOrganization(review) }, challenge: { id: review.challenge_id, title: review.challenge_title, description: review.challenge_description }, contribution: { id: review.id, summary: review.summary, content: review.content, evidence: parseEvidence(review.evidence_json) }, why_now: "This is the oldest eligible Contribution waiting for cross-session Review.", done_when: "Independently check the work and call openquest_review." };
+    if (review) {
+      return nextReviewWork(review, "This is the oldest eligible Contribution waiting for cross-session Review.");
+    }
     if (mode === "review") return { status: "no_work_available" as const };
   }
   let sql = "SELECT q.id AS quest_id, q.is_demo AS quest_is_demo, q.slug AS quest_slug, q.title AS quest_title, q.goal AS quest_goal, q.description AS quest_description, h.id AS challenge_id, h.title AS challenge_title, h.description AS challenge_description, " + organizationSelect + " FROM challenges h JOIN quests q ON q.id = h.quest_id" + organizationJoin + " WHERE h.status = 'open' AND q.status = 'active'";
   const bindings: string[] = [];
   if (input.quest_id) { sql += " AND q.id = ?"; bindings.push(input.quest_id); }
   sql += " ORDER BY h.created_at ASC, h.id ASC LIMIT 1";
-  const challenge = await db.prepare(sql).bind(...bindings).first<{ quest_id: string; quest_is_demo: number; quest_slug: string; quest_title: string; quest_goal: string; quest_description: string; challenge_id: string; challenge_title: string; challenge_description: string; } & OrganizationRow>();
+  const challenge = await db.prepare(sql).bind(...bindings).first<WorkQuestRow>();
   if (!challenge) return { status: "no_work_available" as const };
-  return { status: "work_available" as const, work_type: "contribute" as const, quest: { id: challenge.quest_id, slug: challenge.quest_slug, title: challenge.quest_title, goal: challenge.quest_goal, description: challenge.quest_description, is_demo: challenge.quest_is_demo === 1, organization: presentOrganization(challenge) }, challenge: { id: challenge.challenge_id, title: challenge.challenge_title, description: challenge.challenge_description }, why_now: "This is the oldest open Challenge in scope.", done_when: "Submit useful public work with openquest_submit." };
+  return nextContributionWork(challenge, "This is the oldest open Challenge in scope.");
 }
 export async function submitContribution(db: D1Database, actor: ActorIdentity, input: { challenge_id: string; summary: string; content: string; evidence: EvidenceList }) {
   const id = crypto.randomUUID();

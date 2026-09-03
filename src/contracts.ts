@@ -109,7 +109,38 @@ export const ObserveInputSchema = z.strictObject({
     "Maximum active Quest cards and recent public events to return. Contributors and work stream use fixed bounds.",
   ),
 }).strict();
-export const GetNextWorkInputSchema = z.strictObject({ quest_id: CanonicalQuestIdSchema.optional(), mode: z.enum(["any", "contribute", "review"]).default("any") }).strict();
+export interface NextWorkTargetFields {
+  challenge_id?: string;
+  contribution_id?: string;
+  mode: "any" | "contribute" | "review";
+}
+
+export function nextWorkTargetConflict(input: NextWorkTargetFields): string | null {
+  if (input.challenge_id !== undefined && input.contribution_id !== undefined) {
+    return "Supply at most one of challenge_id or contribution_id.";
+  }
+  if (input.challenge_id !== undefined && input.mode === "review") {
+    return "challenge_id cannot be combined with Review-only mode.";
+  }
+  if (input.contribution_id !== undefined && input.mode === "contribute") {
+    return "contribution_id cannot be combined with Contribution-only mode.";
+  }
+  return null;
+}
+
+export const GetNextWorkInputSchema = z.strictObject({
+  quest_id: CanonicalQuestIdSchema.optional(),
+  mode: z.enum(["any", "contribute", "review"]).default("any"),
+  challenge_id: CanonicalChallengeIdSchema.optional().describe(
+    "Optional canonical open Challenge ID. When supplied, return this specific Contribution task instead of automatic work selection. Do not combine with `contribution_id` or Review-only mode.",
+  ),
+  contribution_id: CanonicalContributionIdSchema.optional().describe(
+    "Optional canonical pending Contribution ID. When supplied, return this specific Review task instead of automatic work selection. Do not combine with `challenge_id` or Contribution-only mode.",
+  ),
+}).strict().superRefine((input, context) => {
+  const conflict = nextWorkTargetConflict(input);
+  if (conflict) context.addIssue({ code: "custom", message: conflict });
+});
 export const SubmitContributionInputSchema = z.strictObject({ challenge_id: CanonicalChallengeIdSchema, summary: ContributionSummarySchema, content: ContributionContentSchema, evidence: EvidenceListSchema.optional().default([]) }).strict();
 export const ReviewContributionInputSchema = z.strictObject({ contribution_id: CanonicalContributionIdSchema, verdict: ReviewVerdictSchema, reason: ReviewReasonSchema, evidence: EvidenceListSchema.optional().default([]) }).strict();
 export const CreateQuestInputSchema = z.strictObject({ title: TitleSchema, goal: QuestGoalSchema, description: QuestDescriptionSchema.optional().default("") }).strict();
@@ -141,10 +172,14 @@ export const FreshnessSchema = z.strictObject({ server_time: IsoTimestampSchema,
 export const ChallengePreviewSchema = ChallengeSchema.extend({ contribution: ContributionPreviewSchema.nullable() }).strict();
 export const ChallengeDetailContributionSchema = ContributionSchema.extend({ review: ReviewSchema.nullable() }).strict();
 export const ChallengeDetailResponseSchema = z.strictObject({ quest: QuestWithOrganizationSchema, challenge: ChallengeSchema, contributions: z.array(ChallengeDetailContributionSchema).max(20) }).strict();
+export const ViewerSchema = z.strictObject({
+  actor_label: ActorLabelSchema,
+}).strict();
 export const ObserveResponseSchema = z.strictObject({
   quests: z.array(QuestCardSchema).max(20), totals: QuestCountsSchema, contributor_count: z.number().int().nonnegative(),
   recent_contributors: z.array(ContributorSchema).max(20), work_stream: WorkStreamSchema, freshness: FreshnessSchema,
   challenges: z.array(ChallengePreviewSchema).max(30).optional(), activity: z.array(EventSchema).max(20),
+  viewer: ViewerSchema.nullable(),
 }).strict();
 export const QuestResponseSchema = z.strictObject({ quest: QuestWithOrganizationSchema, counts: QuestCountsSchema, contributor_count: z.number().int().nonnegative(), challenges: z.array(ChallengePreviewSchema).max(30), activity: z.array(EventSchema).max(20) }).strict();
 export const ContributionResponseSchema = z.strictObject({ contribution: ContributionSchema, challenge: ChallengeSchema, quest: QuestWithOrganizationSchema, review: ReviewSchema.nullable() }).strict();
@@ -194,6 +229,7 @@ export type CreateChallengeInput = z.input<typeof CreateChallengeInputSchema>;
 export type ProposeInput = z.input<typeof ProposeInputSchema>;
 export type ProposeOutput = z.output<typeof ProposeInputSchema>;
 export type ObserveResponse = z.output<typeof ObserveResponseSchema>;
+export type Viewer = z.output<typeof ViewerSchema>;
 export type QuestResponse = z.output<typeof QuestResponseSchema>;
 export type ContributionResponse = z.output<typeof ContributionResponseSchema>;
 export type ChallengeDetailResponse = z.output<typeof ChallengeDetailResponseSchema>;

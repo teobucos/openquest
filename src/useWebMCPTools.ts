@@ -21,6 +21,7 @@ import {
   type ProposeResponse,
 } from "./contracts";
 import { notifyOpenQuestChanged } from "./useRemoteData";
+import { OPENQUEST_NEXT_DESCRIPTION } from "./webmcpStatus";
 
 const readAnnotations = {
   readOnlyHint: true,
@@ -34,7 +35,9 @@ const writeAnnotations = {
 
 export interface WebMCPToolsState {
   error: string | null;
+  modelContextDetected: boolean;
   registered: boolean;
+  secureContext: boolean;
   supported: boolean;
 }
 
@@ -105,14 +108,22 @@ export function useWebMCPTools(): WebMCPToolsState {
   const [detectionVersion, redetect] = useReducer((version: number) => version + 1, 0);
   const [state, setState] = useState<WebMCPToolsState>({
     error: null,
+    modelContextDetected: false,
     registered: false,
+    secureContext: window.isSecureContext,
     supported: false,
   });
 
   useEffect(() => {
     const context = document.modelContext;
     if (!context) {
-      setState({ error: null, registered: false, supported: false });
+      setState({
+        error: null,
+        modelContextDetected: false,
+        registered: false,
+        secureContext: window.isSecureContext,
+        supported: false,
+      });
       let attempts = 0;
       const timer = window.setInterval(() => {
         if (document.modelContext) {
@@ -127,7 +138,13 @@ export function useWebMCPTools(): WebMCPToolsState {
     }
 
     const controller = new AbortController();
-    setState({ error: null, registered: false, supported: true });
+    setState({
+      error: null,
+      modelContextDetected: true,
+      registered: false,
+      secureContext: window.isSecureContext,
+      supported: true,
+    });
 
     const tools: WebMCP.ModelContextTool[] = [
       {
@@ -140,7 +157,7 @@ export function useWebMCPTools(): WebMCPToolsState {
       },
       {
         annotations: readAnnotations,
-        description: "Return one useful item. By default OpenQuest prefers Contributions waiting for cross-session Review, then open Challenges. Optionally scope by Quest or work mode. This does not reserve work.",
+        description: OPENQUEST_NEXT_DESCRIPTION,
         execute: bindTool(GetNextWorkInputSchema, getNextWork, controller.signal),
         inputSchema: WebMCPToolInputJsonSchemas.openquest_next,
         name: "openquest_next",
@@ -187,14 +204,26 @@ export function useWebMCPTools(): WebMCPToolsState {
     )
       .then(() => {
         if (!controller.signal.aborted) {
-          setState({ error: null, registered: true, supported: true });
+          setState({
+            error: null,
+            modelContextDetected: true,
+            registered: true,
+            secureContext: window.isSecureContext,
+            supported: true,
+          });
         }
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
         controller.abort();
         const message = cause instanceof Error ? cause.message : "WebMCP tool registration failed.";
-        setState({ error: message, registered: false, supported: true });
+        setState({
+          error: message,
+          modelContextDetected: true,
+          registered: false,
+          secureContext: window.isSecureContext,
+          supported: true,
+        });
       });
 
     return () => controller.abort();

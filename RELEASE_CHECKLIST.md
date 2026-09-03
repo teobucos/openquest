@@ -11,7 +11,14 @@ recorded the evidence for the target deployment.
 - [ ] Confirm the deterministic demo migration, seed, and verification commands
   against the selected target without resetting public records.
 - [ ] Review the release diff for the exactly five WebMCP tools and closed
-  public inputs.
+  public inputs, including optional `openquest_next` Challenge/Contribution
+  targeting that does not reserve work.
+- [ ] Confirm session-isolation preflight: anonymous Observe is `viewer: null`,
+  the first write establishes `SESSION · <public label>`, and two agents that
+  share a cookie show the same label.
+- [ ] Record the Chrome / ChatGPT in-app / agent-harness matrix from
+  `WEBMCP_TESTING.md` rather than treating Playwright's fake `document.modelContext`
+  as native WebMCP evidence.
 
 ## External deployment and public-operation gates
 

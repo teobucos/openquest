@@ -7,7 +7,9 @@ import {
   ReviewContributionResponseSchema,
   SubmitContributionResponseSchema,
 } from "../src/contracts";
+import { LIVE_EFFECT_MS } from "../src/dashboard/canonicalHighlights";
 import {
+  domainErrorTool,
   installFakeWebMcp,
   registeredTools,
   successfulTool,
@@ -67,7 +69,7 @@ const expectedToolNames = [
 ];
 
 function metricValue(page: Page, label: string) {
-  return page.locator(".telemetry-cell").filter({ hasText: label }).locator("strong");
+  return page.locator(".telemetry-cell").filter({ hasText: label }).locator(".metric-value");
 }
 
 async function animationDurationMilliseconds(locator: ReturnType<Page["locator"]>): Promise<number> {
@@ -172,6 +174,8 @@ test("two isolated dashboards receive open, Review, and Result state through Wor
     const challengeTitle = `Live state Challenge ${crypto.randomUUID()}`;
     const challenge = await createChallenge(contributorPage, quest.quest_id, challengeTitle);
     await expect(challengeRow(reviewerPage, challengeTitle)).toHaveAttribute("data-state", "open");
+    await expect(challengeRow(reviewerPage, challengeTitle)).toHaveClass(/is-fresh/);
+    await expect(reviewerPage.getByTestId("metric-delta-open")).toHaveText("+1");
     await expect(reviewerPage.getByTestId("activity-list")).toContainText(`New Challenge: ${challengeTitle}`);
 
     const submittedResponse = await contributorPage.request.post("/api/contributions", {
@@ -190,7 +194,7 @@ test("two isolated dashboards receive open, Review, and Result state through Wor
     await expect(contributorWorkRow).toHaveClass(/is-fresh/);
     await expect(contributorLatestActivity).toHaveClass(/is-fresh/);
     await expect(contributorPage.getByTestId("latest-event-indicator")).toHaveClass(/is-fresh/);
-    expect(await animationDurationMilliseconds(contributorWorkRow)).toBe(750);
+    expect(await animationDurationMilliseconds(contributorWorkRow)).toBe(LIVE_EFFECT_MS);
     await expect(challengeRow(reviewerPage, challengeTitle)).toHaveAttribute("data-state", "review");
     await expect(challengeRow(reviewerPage, challengeTitle)).toHaveClass(/is-fresh/);
     expect(await animationDurationMilliseconds(challengeRow(reviewerPage, challengeTitle))).toBeLessThanOrEqual(1);
@@ -210,6 +214,13 @@ test("two isolated dashboards receive open, Review, and Result state through Wor
     await expect(challengeRow(contributorPage, challengeTitle)).toHaveAttribute("data-state", "resolved");
     await expect(challengeRow(reviewerPage, challengeTitle)).toHaveAttribute("data-state", "resolved");
     await expect(contributorPage.getByTestId("activity-list")).toContainText(`Resolved: ${challengeTitle}`);
+    await contributorPage.getByRole("link", { name: "← WHOLE NETWORK" }).click();
+    await expect(contributorPage.getByRole("heading", { name: "OPENQUEST CONTROL CENTER" })).toBeVisible();
+    await expect(contributorPage.locator(".metric-delta")).toHaveCount(0);
+    await expect(contributorPage.locator(".work-row.is-fresh")).toHaveCount(0);
+    await openQuestDashboard(contributorPage, quest.slug, questTitle);
+    await expect(contributorPage.locator(".metric-delta")).toHaveCount(0);
+    await expect(contributorPage.locator(".work-row.is-fresh")).toHaveCount(0);
   } finally {
     await contributor.close();
     await reviewer.close();
@@ -257,6 +268,7 @@ test("WebMCP contributions and Reviews propagate through the real Worker live pa
     expect(agentBWorldReads).toBe(healthyAgentBReads);
 
     const sequenceBeforeContribution = await latestSequence(agentBPage);
+    const contributionStart = Date.now();
     const contributionWork = await successfulTool(
       agentAPage,
       { name: "openquest_next", input: { quest_id: quest.quest_id } },
@@ -286,12 +298,21 @@ test("WebMCP contributions and Reviews propagate through the real Worker live pa
       SubmitContributionResponseSchema,
     );
     expect(submitted.status).toBe("submitted");
+    const contributionComplete = Date.now();
     await expect(challengeRow(agentAPage, challengeTitle)).toHaveAttribute("data-state", "review");
     await expect(challengeRow(agentBPage, challengeTitle)).toHaveAttribute("data-state", "review");
+    const contributionVisible = Date.now();
+    const contributionStartToVisible = contributionVisible - contributionStart;
+    const contributionCompleteToVisible = contributionVisible - contributionComplete;
+    console.log(`Contribution→Needs Review tool-start→remote-visible: ${contributionStartToVisible}ms`);
+    console.log(`Contribution→Needs Review tool-complete→remote-visible: ${contributionCompleteToVisible}ms`);
+    expect(contributionStartToVisible).toBeLessThanOrEqual(5_000);
     await expect(challengeRow(agentBPage, challengeTitle)).toContainText(contributionSummary);
     await expect(agentBPage.getByTestId("activity-list")).toContainText("Contribution submitted");
     await expect(metricValue(agentBPage, "Needs Review")).toHaveText("1");
     await expect(metricValue(agentBPage, "Open")).toHaveText("0");
+    await expect(agentBPage.getByTestId("metric-delta-awaiting_review")).toHaveText("+1");
+    await expect(agentBPage.getByTestId("metric-delta-open")).toHaveText("-1");
     const sequenceAfterContribution = await latestSequence(agentBPage);
     expect(sequenceAfterContribution).toBeGreaterThan(sequenceBeforeContribution);
 
@@ -320,6 +341,7 @@ test("WebMCP contributions and Reviews propagate through the real Worker live pa
       throw new Error("Expected Agent B to receive Review work first.");
     }
 
+    const reviewStart = Date.now();
     const reviewed = await successfulTool(
       agentBPage,
       {
@@ -333,8 +355,15 @@ test("WebMCP contributions and Reviews propagate through the real Worker live pa
       },
       ReviewContributionResponseSchema,
     );
+    const reviewComplete = Date.now();
     expect(reviewed).toMatchObject({ challenge_status: "resolved", verdict: "support" });
     await expect(challengeRow(agentAPage, challengeTitle)).toHaveAttribute("data-state", "resolved");
+    const reviewVisible = Date.now();
+    const reviewStartToVisible = reviewVisible - reviewStart;
+    const reviewCompleteToVisible = reviewVisible - reviewComplete;
+    console.log(`Review→Result tool-start→remote-visible: ${reviewStartToVisible}ms`);
+    console.log(`Review→Result tool-complete→remote-visible: ${reviewCompleteToVisible}ms`);
+    expect(reviewStartToVisible).toBeLessThanOrEqual(5_000);
     await expect(challengeRow(agentAPage, challengeTitle)).toContainText(contributionSummary);
     await expect(agentAPage.getByTestId("activity-list")).toContainText(`Resolved: ${challengeTitle}`);
     await expect(metricValue(agentAPage, "Needs Review")).toHaveText("0");
@@ -407,5 +436,132 @@ test("a disconnected dashboard refreshes missed canonical D1 state after reconne
   } finally {
     await disconnected.close();
     await writer.close();
+  }
+});
+
+test("targeted openquest_next selects a fresh Review while automatic routing stays oldest-first", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const agentA = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `live-target-a-${crypto.randomUUID()}` },
+  });
+  const agentB = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `live-target-b-${crypto.randomUUID()}` },
+  });
+  await Promise.all([installFakeWebMcp(agentA), installFakeWebMcp(agentB)]);
+  const agentAPage = await agentA.newPage();
+  const agentBPage = await agentB.newPage();
+
+  try {
+    await agentAPage.goto("/");
+    const questTitle = `Targeted live Quest ${crypto.randomUUID()}`;
+    const quest = await createQuest(agentAPage, questTitle);
+    const olderTitle = `Older pending Challenge ${crypto.randomUUID()}`;
+    const freshTitle = `Fresh pending Challenge ${crypto.randomUUID()}`;
+    const older = await createChallenge(agentAPage, quest.quest_id, olderTitle);
+    const fresh = await createChallenge(agentAPage, quest.quest_id, freshTitle);
+
+    await Promise.all([
+      openQuestDashboard(agentAPage, quest.slug, questTitle),
+      openQuestDashboard(agentBPage, quest.slug, questTitle),
+    ]);
+    await Promise.all([expectFiveWebMcpTools(agentAPage), expectFiveWebMcpTools(agentBPage)]);
+    await expect(agentAPage.getByTestId("session-line")).toHaveText(/^SESSION · Agent [0-9A-F]{8}$/);
+    await expect(agentBPage.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
+
+    const olderSubmitted = await successfulTool(
+      agentAPage,
+      {
+        name: "openquest_submit",
+        input: {
+          challenge_id: older.challenge_id,
+          content: "Older pending public Contribution used as the automatic Review-first backlog.",
+          evidence: [{ title: "Older targeting evidence", url: "https://example.com/older-target" }],
+          summary: "Older pending Contribution.",
+        },
+      },
+      SubmitContributionResponseSchema,
+    );
+    const freshSubmitted = await successfulTool(
+      agentAPage,
+      {
+        name: "openquest_submit",
+        input: {
+          challenge_id: fresh.challenge_id,
+          content: "Fresh pending public Contribution that explicit targeting must be able to select.",
+          evidence: [{ title: "Fresh targeting evidence", url: "https://example.com/fresh-target" }],
+          summary: "Fresh pending Contribution.",
+        },
+      },
+      SubmitContributionResponseSchema,
+    );
+    await expect(challengeRow(agentBPage, olderTitle)).toHaveAttribute("data-state", "review");
+    await expect(challengeRow(agentBPage, freshTitle)).toHaveAttribute("data-state", "review");
+
+    const automatic = await successfulTool(
+      agentBPage,
+      { name: "openquest_next", input: { quest_id: quest.quest_id } },
+      GetNextWorkResponseSchema,
+    );
+    expect(automatic).toMatchObject({
+      contribution: { id: olderSubmitted.contribution_id },
+      status: "work_available",
+      work_type: "review",
+    });
+
+    const targeted = await successfulTool(
+      agentBPage,
+      {
+        name: "openquest_next",
+        input: {
+          contribution_id: freshSubmitted.contribution_id,
+          mode: "review",
+          quest_id: quest.quest_id,
+        },
+      },
+      GetNextWorkResponseSchema,
+    );
+    expect(targeted).toMatchObject({
+      contribution: { id: freshSubmitted.contribution_id },
+      status: "work_available",
+      work_type: "review",
+      why_now: "This specific pending Contribution was requested for independent Review.",
+    });
+    if (targeted.status !== "work_available" || targeted.work_type !== "review") {
+      throw new Error("Expected targeted Review work.");
+    }
+
+    await expect(agentBPage.getByTestId("session-line")).not.toHaveText(
+      await agentAPage.getByTestId("session-line").innerText(),
+    );
+
+    const reviewed = await successfulTool(
+      agentBPage,
+      {
+        name: "openquest_review",
+        input: {
+          contribution_id: targeted.contribution.id,
+          evidence: [{ title: "Targeted live review evidence", url: "https://example.com/targeted-live-review" }],
+          reason: "The isolated reviewer confirmed the specifically requested Contribution.",
+          verdict: "support",
+        },
+      },
+      ReviewContributionResponseSchema,
+    );
+    expect(reviewed).toMatchObject({ challenge_status: "resolved", verdict: "support" });
+    await expect(challengeRow(agentAPage, freshTitle)).toHaveAttribute("data-state", "resolved");
+    await expect(challengeRow(agentBPage, olderTitle)).toHaveAttribute("data-state", "review");
+
+    const selfTarget = await domainErrorTool(
+      agentAPage,
+      {
+        name: "openquest_next",
+        input: { contribution_id: olderSubmitted.contribution_id, mode: "review" },
+      },
+      "self_review_forbidden",
+    );
+    expect(selfTarget.status).toBe("self_review_forbidden");
+  } finally {
+    await agentA.close();
+    await agentB.close();
   }
 });

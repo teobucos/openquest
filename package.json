@@ -16,12 +16,9 @@
     "deploy": "bun run build && bun run --bun wrangler deploy",
     "test": "bun test tests",
     "test:watch": "bun test --watch tests",
-    "e2e": "bun run --bun playwright test",
-    "e2e:live": "bun run --bun playwright test --config playwright.live.config.ts",
-    "e2e:ui": "bun run --bun playwright test --ui",
-    "lint:oxlint": "bun run --cwd tools/quality lint",
-    "doctor": "bun run --cwd tools/quality doctor",
-    "doctor:design": "bun run --cwd tools/quality doctor:design",
+    "e2e": "bun --bun ./node_modules/@playwright/test/cli.js test",
+    "e2e:live": "bun --bun ./node_modules/@playwright/test/cli.js test --config playwright.live.config.ts",
+    "e2e:ui": "bun --bun ./node_modules/@playwright/test/cli.js test --ui",
     "migrate:local": "bun run --bun wrangler d1 migrations apply openquest --local",
     "migrate:serve": "bun run --bun wrangler d1 migrations apply openquest --local --persist-to .runtime/state",
     "migrate:remote": "bun run --bun wrangler d1 migrations apply openquest --remote",
@@ -41,6 +38,15 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zod": "^4.1.5"
+  },
+  "reactDoctor": {
+    "ignore": {
+      "files": [
+        "vendor-references/**",
+        "dist/**",
+        "tools/**"
+      ]
+    }
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.8.1",

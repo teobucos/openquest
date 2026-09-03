@@ -2,8 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  outputDir: "./test-results/runs",
   testMatch: ["live-worker.spec.ts", "realtime-core.spec.ts"],
-  forbidOnly: Boolean(import.meta.env.CI),
+  forbidOnly: Boolean(process.env.CI),
   workers: 1,
   use: {
     baseURL: "http://127.0.0.1:4178",
