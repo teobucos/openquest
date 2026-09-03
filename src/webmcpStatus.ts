@@ -17,7 +17,7 @@ const panelLabels = {
   failed: "FAILED",
   ready: "READY",
   registering: "REGISTERING",
-  unavailable: "NOT AVAILABLE",
+  unavailable: "UNAVAILABLE",
 } as const;
 
 const registrationFacts = {

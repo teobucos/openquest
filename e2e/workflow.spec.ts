@@ -178,7 +178,7 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
     await expectFiveTools(pageA, pageB);
 
     const questTitle = `OpenQuest workflow ${testInfo.workerIndex} ${crypto.randomUUID()}`;
-    await pageA.getByText("CREATE A QUEST", { exact: true }).click();
+    await pageA.getByRole("button", { name: "+ NEW QUEST" }).click();
     await pageA.getByLabel("Title", { exact: true }).fill(questTitle);
     await pageA.getByLabel("Goal", { exact: true }).fill(
       "Prove that humans set direction while other sessions move public work forward.",

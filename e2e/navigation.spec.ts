@@ -185,7 +185,7 @@ test("a human-created Quest keeps the same document and the five registered tool
     const initialTools = await registeredTools(page);
     expect(initialTools).toHaveLength(5);
 
-    await page.getByText("CREATE A QUEST", { exact: true }).click();
+    await page.getByRole("button", { name: "+ NEW QUEST" }).click();
     await page.getByLabel("Title").fill(`Human navigation ${crypto.randomUUID()}`);
     await page.getByLabel("Goal").fill("Prove that a human Quest creation changes route state without replacing the mounted application.");
     await page.getByLabel("Description").fill("This deterministic browser form fixture stays entirely public.");
@@ -226,12 +226,14 @@ test("the command center follows the system color scheme", async ({ page }) => {
 
 test("the context rail keeps Quests open and collapses the other sections", async ({ page }) => {
   await page.goto("/");
-  const quests = page.locator("aside.command-rail .quest-list-panel .panel-heading");
-  const contributors = page.locator("aside.command-rail .contributor-panel .panel-heading");
-  const webmcp = page.locator("aside.command-rail .webmcp-panel .panel-heading");
+  const quests = page.locator("aside.command-rail .quest-list-panel [aria-expanded]");
+  const contributors = page.locator("aside.command-rail .contributor-panel [aria-expanded]");
+  const webmcp = page.locator("aside.command-rail .webmcp-panel [aria-expanded]");
   await expect(quests).toHaveAttribute("aria-expanded", "true");
   await expect(contributors).toHaveAttribute("aria-expanded", "false");
   await expect(webmcp).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("aside.command-rail")).not.toContainText("CREATE A QUEST");
+  await expect(page.locator("aside.command-rail .create-panel")).toHaveCount(0);
   await expect(page.getByTestId("session-line")).toHaveCount(0);
 
   await expandRailSection(page, "WEBMCP TOOL BUS");
@@ -243,6 +245,65 @@ test("the context rail keeps Quests open and collapses the other sections", asyn
   await expect(quests).toHaveAttribute("aria-expanded", "false");
   await quests.click();
   await expect(quests).toHaveAttribute("aria-expanded", "true");
+});
+
+test("compact header pagers page list panels without collapsing the rail", async ({ browser }) => {
+  const context = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `e2e-pager-${crypto.randomUUID()}` },
+  });
+  const page = await context.newPage();
+  try {
+    const world = ObserveResponseSchema.parse(await (await page.request.get("/api/world")).json());
+    for (let extra = world.quests.length; extra <= 6; extra += 1) {
+      const created = await page.request.post("/api/quests", {
+        data: {
+          description: "Public pager fixture Quest used to fill the control-center list.",
+          goal: "Keep enough public Quests visible that the compact header pager must appear.",
+          title: `Pager Quest ${extra + 1} ${crypto.randomUUID()}`,
+        },
+      });
+      expect(created.status()).toBe(201);
+      CreateQuestResponseSchema.parse(await created.json());
+    }
+    if (world.work_stream.length <= 6) {
+      const questId = world.quests[0]?.id;
+      if (!questId) throw new Error("Expected a seeded Quest for extra work-stream rows.");
+      const extraWork = 7 - world.work_stream.length;
+      for (let index = 0; index < extraWork; index += 1) {
+        const created = await page.request.post("/api/challenges", {
+          data: {
+            description: "Public pager fixture Challenge used to fill the work stream.",
+            quest_id: questId,
+            title: `Pager Challenge ${index + 1} ${crypto.randomUUID()}`,
+          },
+        });
+        expect(created.status()).toBe(201);
+        CreateChallengeResponseSchema.parse(await created.json());
+      }
+    }
+
+    await page.goto("/");
+    const questPager = page.getByRole("navigation", { name: "Quests pages" });
+    await expect(questPager).toBeVisible();
+    const firstPageQuests = await page.locator(".quest-row h3").allTextContents();
+    expect(firstPageQuests).toHaveLength(6);
+    await questPager.getByRole("button", { name: "Next page" }).click();
+    await expect(questPager).toContainText("2 /");
+    await expect(page.locator(".quest-list-panel .rail-heading-toggle")).toHaveAttribute("aria-expanded", "true");
+    const laterQuests = await page.locator(".quest-row h3").allTextContents();
+    expect(laterQuests.length).toBeGreaterThan(0);
+    expect(laterQuests.some((title) => firstPageQuests.includes(title))).toBe(false);
+    await expect(page.locator(".quest-row").first()).toBeVisible();
+
+    const workPager = page.getByRole("navigation", { name: "Work stream pages" });
+    await expect(workPager).toBeVisible();
+    await expect(page.locator(".work-row")).toHaveCount(6);
+    await workPager.getByRole("button", { name: "Next page" }).click();
+    await expect(workPager).toContainText("2 /");
+    await expect(page.locator(".work-row").first()).toBeVisible();
+  } finally {
+    await context.close();
+  }
 });
 
 test("long public stream text, filters, and activity stay readable at target viewports", async ({ browser }) => {

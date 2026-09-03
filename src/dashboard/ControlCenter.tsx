@@ -3,13 +3,10 @@ import {
   useMemo,
   useRef,
   useState,
-  type FormEvent,
   type ReactNode,
 } from "react";
-import { createQuest } from "../api";
 import { Brand } from "../Brand";
 import type { ObserveResponse } from "../contracts";
-import { readableError } from "../useRemoteData";
 import type { WebMCPToolsState } from "../useWebMCPTools";
 import {
   SESSION_HELP_TEXT,
@@ -21,6 +18,7 @@ import {
   webMcpSurfaceState,
 } from "../webmcpStatus";
 import { ChallengeInspector } from "./ChallengeInspector";
+import { CreateQuestPopover } from "./CreateQuestPopover";
 import {
   LIVE_EFFECT_MS,
   canonicalMetricDeltas,
@@ -32,6 +30,9 @@ import {
   type CanonicalMetricDeltas,
 } from "./canonicalHighlights";
 import type { RouteNavigationHandler, RouteState, WorkFilter } from "./navigation";
+import { PANEL_PAGE_SIZE, pageSlice } from "./panelPage";
+import { PanelPager } from "./PanelPager";
+import { usePanelPage } from "./usePanelPage";
 
 type LiveStatus = "connecting" | "live" | "reconnecting" | "degraded";
 
@@ -134,50 +135,11 @@ function useCanonicalHighlights(data: ObserveResponse, scopeKey: string): Canoni
   return highlights;
 }
 
-function CreateQuestForm({
-  open,
-  onCreated,
-  onOpenChange,
-}: {
-  open: boolean;
-  onCreated: (slug: string) => void;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setMessage(null);
-    const fields = new FormData(event.currentTarget);
-    try {
-      const result = await createQuest({
-        title: String(fields.get("title") ?? ""),
-        goal: String(fields.get("goal") ?? ""),
-        description: String(fields.get("description") ?? ""),
-      });
-      onCreated(result.slug);
-    } catch (cause: unknown) {
-      setMessage(readableError(cause));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-  return (
-    <RailSection className="create-panel" title="CREATE A QUEST" open={open} onToggle={() => onOpenChange(!open)}>
-      <div className="create-body">
-        <p className="create-safety">Everything on OpenQuest is public. Do not submit confidential, proprietary, personal, credential, or secret information.</p>
-        <form className="quest-form" onSubmit={submit}>
-          <label>Title<input name="title" required minLength={3} maxLength={160} /></label>
-          <label>Goal<textarea name="goal" required minLength={10} maxLength={2_000} /></label>
-          <label>Description<textarea name="description" maxLength={6_000} /></label>
-          <button type="submit" disabled={submitting}>{submitting ? "Creating…" : "Create Quest"}</button>
-          {message ? <p className="form-error" role="alert">{message}</p> : null}
-        </form>
-      </div>
-    </RailSection>
-  );
-}
+type RailOpenState = {
+  quests: boolean;
+  contributors: boolean;
+  webmcp: boolean;
+};
 
 export function ControlCenter({
   data,
@@ -196,13 +158,13 @@ export function ControlCenter({
   refreshError: string | null;
   liveStatus?: LiveStatus;
 }) {
-  const [railOpen, setRailOpen] = useState({
+  const [railOpen, setRailOpen] = useState<RailOpenState>({
     quests: true,
     contributors: false,
     webmcp: false,
-    create: false,
   });
-  const toggleRail = (id: "quests" | "contributors" | "webmcp" | "create") => {
+  const [createOpen, setCreateOpen] = useState(false);
+  const toggleRail = (id: keyof RailOpenState) => {
     setRailOpen((current) => ({ ...current, [id]: !current[id] }));
   };
   const scopedQuest = route.scope.kind === "quest" && data.quests[0]?.slug === route.scope.slug
@@ -238,7 +200,24 @@ export function ControlCenter({
           <div className="command-actions">
             <LiveIndicator status={liveStatus} error={refreshError} />
             <span className={`sync-stamp${highlights.latestSequence === data.freshness.last_sequence ? " is-fresh" : ""}`} data-testid="latest-event-indicator">LATEST EVENT #{data.freshness.last_sequence}</span>
-            {route.scope.kind === "network" ? <button className="compact-action" type="button" onClick={() => setRailOpen((current) => ({ ...current, create: true }))}>+ NEW QUEST</button> : null}
+            {route.scope.kind === "network" ? (
+              <div className="create-quest-control">
+                <button
+                  className="compact-action"
+                  type="button"
+                  aria-expanded={createOpen}
+                  aria-haspopup="dialog"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  + NEW QUEST
+                </button>
+                <CreateQuestPopover
+                  open={createOpen}
+                  onOpenChange={setCreateOpen}
+                  onCreated={(slug) => navigate({ scope: { kind: "quest", slug }, filter: "all", challengeId: null })}
+                />
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -248,19 +227,19 @@ export function ControlCenter({
           <WorkStreamPanel
             highlights={highlights}
             navigate={navigate}
+            pageIdentity={`${scopeKey}:${route.filter}`}
             route={route}
             scopeRoute={scopeRoute}
             totals={data.totals}
             visibleWork={visibleWork}
           />
-          <ActivityPanel data={data} latestEventSequence={highlights.latestEventSequence} />
+          <ActivityPanel data={data} latestEventSequence={highlights.latestEventSequence} pageIdentity={scopeKey} />
           <aside className="command-rail" aria-label="OpenQuest context">
             {route.scope.kind === "network"
               ? <QuestList data={data} route={route} onNavigate={onNavigate} open={railOpen.quests} onToggle={() => toggleRail("quests")} />
               : <QuestContext quest={scopedQuest} data={data} open={railOpen.quests} onToggle={() => toggleRail("quests")} />}
-            <ContributorPanel data={data} open={railOpen.contributors} onToggle={() => toggleRail("contributors")} />
+            <ContributorPanel data={data} open={railOpen.contributors} onToggle={() => toggleRail("contributors")} pageIdentity={scopeKey} />
             <WebMcpPanel tools={tools} viewer={data.viewer} prompt={route.scope.kind === "quest" ? "Help move this Quest forward." : "Help with whatever is most useful."} open={railOpen.webmcp} onToggle={() => toggleRail("webmcp")} />
-            {route.scope.kind === "network" ? <CreateQuestForm open={railOpen.create} onOpenChange={(open) => setRailOpen((current) => ({ ...current, create: open }))} onCreated={(slug) => navigate({ scope: { kind: "quest", slug }, filter: "all", challengeId: null })} /> : null}
           </aside>
           <section className="ops-panel primitive-pipeline" aria-labelledby="pipeline-title">
             <div className="panel-heading"><h2 id="pipeline-title">PRIMITIVE PIPELINE</h2><span>PUBLIC STATE FLOW</span></div>
@@ -295,6 +274,7 @@ function TelemetryRail({ data, deltas }: { data: ObserveResponse; deltas: Canoni
 function WorkStreamPanel({
   highlights,
   navigate,
+  pageIdentity,
   route,
   scopeRoute,
   totals,
@@ -302,14 +282,21 @@ function WorkStreamPanel({
 }: {
   highlights: CanonicalHighlights;
   navigate: (route: RouteState) => void;
+  pageIdentity: string;
   route: RouteState;
   scopeRoute: (patch: Partial<Pick<RouteState, "filter" | "challengeId">>) => RouteState;
   totals: ObserveResponse["totals"];
   visibleWork: ObserveResponse["work_stream"];
 }) {
+  const paging = usePanelPage(visibleWork.length, pageIdentity);
+  const pagedWork = pageSlice(visibleWork, paging.page);
   return (
     <section className="ops-panel work-stream-panel" aria-labelledby="work-stream-title">
-      <div className="panel-heading"><h2 id="work-stream-title">WORK STREAM</h2><span>{visibleWork.length} SHOWN</span></div>
+      <div className="panel-heading">
+        <h2 id="work-stream-title">WORK STREAM</h2>
+        <PanelPager label="Work stream pages" page={paging.page} pageCount={paging.pageCount} onPageChange={paging.setPage} />
+        <span>{visibleWork.length} SHOWN</span>
+      </div>
       <div className="work-lanes" aria-label="Available work queues">
         <button type="button" className={route.filter === "review" ? "is-selected" : ""} onClick={() => navigate(scopeRoute({ filter: "review" }))}>
           <span>REVIEW QUEUE</span><strong>{totals.awaiting_review}</strong><small>Pending independent Review</small>
@@ -322,7 +309,7 @@ function WorkStreamPanel({
         {filters.map((filter) => <button key={filter.value} type="button" className={route.filter === filter.value ? "is-selected" : ""} onClick={() => navigate(scopeRoute({ filter: filter.value }))}>{filter.label}</button>)}
       </div>
       <div className="work-stream" aria-live="polite">
-        {visibleWork.map((item) => {
+        {pagedWork.map((item) => {
           const stamp = item.stream_state === "resolved" ? item.challenge.updated_at : item.challenge.created_at;
           return (
             <button className={`work-row${highlights.changedChallengeIds.has(item.challenge.id) ? " is-fresh" : ""}`} type="button" key={`${item.stream_state}-${item.challenge.id}`} data-state={item.stream_state} onClick={() => navigate(scopeRoute({ challengeId: item.challenge.id }))}>
@@ -341,15 +328,23 @@ function WorkStreamPanel({
 function ActivityPanel({
   data,
   latestEventSequence,
+  pageIdentity,
 }: {
   data: ObserveResponse;
   latestEventSequence: number | null;
+  pageIdentity: string;
 }) {
+  const paging = usePanelPage(data.activity.length, pageIdentity);
+  const pagedActivity = pageSlice(data.activity, paging.page);
   return (
     <section className="ops-panel activity-console" aria-labelledby="activity-title">
-      <div className="panel-heading"><h2 id="activity-title">PUBLIC ACTIVITY</h2><span>LATEST EVENT #{data.freshness.last_sequence}</span></div>
+      <div className="panel-heading">
+        <h2 id="activity-title">PUBLIC ACTIVITY</h2>
+        <PanelPager label="Public activity pages" page={paging.page} pageCount={paging.pageCount} onPageChange={paging.setPage} />
+        <span>LATEST EVENT #{data.freshness.last_sequence}</span>
+      </div>
       <div className="activity-list" data-testid="activity-list" aria-live="polite" aria-relevant="additions text">
-        {data.activity.map((event) => (
+        {pagedActivity.map((event) => (
           <div className={`activity-row${latestEventSequence === event.sequence ? " is-fresh" : ""}`} key={event.sequence}>
             <span className="activity-icon">#{String(event.sequence).padStart(4, "0")}</span>
             <div>
@@ -371,6 +366,7 @@ function ActivityPanel({
 function RailSection({
   children,
   className,
+  controls,
   meta,
   onToggle,
   open,
@@ -378,6 +374,7 @@ function RailSection({
 }: {
   children: ReactNode;
   className: string;
+  controls?: ReactNode;
   meta?: string;
   onToggle: () => void;
   open: boolean;
@@ -385,11 +382,14 @@ function RailSection({
 }) {
   return (
     <section className={`ops-panel rail-section${open ? " is-open" : ""} ${className}`}>
-      <button type="button" className="panel-heading" aria-expanded={open} onClick={onToggle}>
-        <h2>{title}</h2>
-        {meta ? <span>{meta}</span> : null}
-        <span className="rail-toggle" aria-hidden="true">{open ? "–" : "+"}</span>
-      </button>
+      <div className="panel-heading">
+        <button type="button" className="rail-heading-toggle" aria-expanded={open} onClick={onToggle}>
+          <h2>{title}</h2>
+          {meta ? <span>{meta}</span> : null}
+          <span className="rail-toggle" aria-hidden="true">{open ? "–" : "+"}</span>
+        </button>
+        {open ? controls : null}
+      </div>
       {open ? <div className="rail-section-body">{children}</div> : null}
     </section>
   );
@@ -399,15 +399,26 @@ function ContributorPanel({
   data,
   onToggle,
   open,
+  pageIdentity,
 }: {
   data: ObserveResponse;
   onToggle: () => void;
   open: boolean;
+  pageIdentity: string;
 }) {
+  const paging = usePanelPage(data.recent_contributors.length, pageIdentity);
+  const pagedContributors = pageSlice(data.recent_contributors, paging.page);
   return (
-    <RailSection className="contributor-panel" title="RECENT CONTRIBUTORS" meta={`${data.contributor_count} TOTAL`} open={open} onToggle={onToggle}>
+    <RailSection
+      className="contributor-panel"
+      title="RECENT CONTRIBUTORS"
+      meta={`${data.contributor_count} TOTAL`}
+      open={open}
+      onToggle={onToggle}
+      controls={<PanelPager label="Recent contributors pages" page={paging.page} pageCount={paging.pageCount} onPageChange={paging.setPage} />}
+    >
       <div className="contributor-list">
-        {data.recent_contributors.map((contributor) => (
+        {pagedContributors.map((contributor) => (
           <div className="contributor-row" key={contributor.actor_label}>
             <span className="contributor-avatar">{agentInitials(contributor.actor_label)}</span>
             <span className="contributor-copy"><strong>{contributor.actor_label}</strong><span>{contributor.last_summary}</span></span>
@@ -505,15 +516,25 @@ function QuestList({
   open: boolean;
   route: RouteState;
 }) {
+  const paging = usePanelPage(data.quests.length, "network-quests");
+  const pagedQuests = pageSlice(data.quests, paging.page);
   return (
-    <RailSection className="quest-list-panel" title="QUESTS" meta={`${data.quests.length} VISIBLE`} open={open} onToggle={onToggle}>
+    <RailSection
+      className="quest-list-panel"
+      title="QUESTS"
+      meta={`${data.quests.length} VISIBLE`}
+      open={open}
+      onToggle={onToggle}
+      controls={<PanelPager label="Quests pages" page={paging.page} pageCount={paging.pageCount} onPageChange={paging.setPage} />}
+    >
       <div className="quest-list">
-        {data.quests.map((quest, index) => {
+        {pagedQuests.map((quest, index) => {
           const total = quest.counts.open + quest.counts.awaiting_review + quest.counts.resolved;
           const completion = total === 0 ? 0 : Math.round((quest.counts.resolved / total) * 100);
+          const questIndex = (paging.page - 1) * PANEL_PAGE_SIZE + index + 1;
           return (
             <a className="quest-row quest-queue-row" href={`/q/${quest.slug}`} key={quest.id} onClick={onNavigate({ scope: { kind: "quest", slug: quest.slug }, filter: route.filter, challengeId: null })}>
-              <span className="quest-index">{String(index + 1).padStart(2, "0")}</span>
+              <span className="quest-index">{String(questIndex).padStart(2, "0")}</span>
               <div className="quest-queue-copy">
                 <h3>{demoPrefix(quest)}{quest.title}</h3>
                 <p>{quest.goal}</p>

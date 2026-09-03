@@ -175,7 +175,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
   background: var(--line);
   gap: 1px;
 }
-.ops-panel, .create-panel { min-width: 0; min-height: 0; background: var(--panel); }
+.ops-panel { min-width: 0; min-height: 0; background: var(--panel); }
 .panel-heading {
   height: 42px;
   display: flex;
@@ -186,11 +186,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
   border-bottom: 1px solid var(--line-soft);
   background: var(--panel);
 }
-button.panel-heading {
+.rail-heading-toggle {
   appearance: none;
-  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
   border: 0;
-  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
   font: inherit;
   color: inherit;
   cursor: pointer;
@@ -199,6 +206,32 @@ button.panel-heading {
 .panel-heading h2 { margin: 0; color: var(--acid-text); font-size: 11px; font-weight: 500; letter-spacing: .08em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel-heading span { color: var(--muted); font-size: 9px; white-space: nowrap; }
 .rail-toggle { margin-left: auto; color: var(--acid-text); font-size: 14px; line-height: 1; }
+.panel-pager {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.panel-pager button {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--acid-text);
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+}
+.panel-pager button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
 
 .work-stream-panel { grid-column: 1; grid-row: 1; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); }
 .work-lanes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 1px solid var(--line-soft); }
@@ -263,7 +296,7 @@ button.panel-heading {
 .activity-kind { color: var(--blue-text) !important; text-transform: uppercase; }
 .activity-row time { color: var(--muted); font-size: 8px; white-space: nowrap; padding-top: 2px; }
 
-.command-rail { grid-column: 3; grid-row: 1 / span 2; min-height: 0; display: flex; flex-direction: column; gap: 1px; background: var(--line); overflow: hidden; }
+.command-rail { grid-column: 3; grid-row: 1 / span 2; min-height: 0; display: flex; flex-direction: column; gap: 1px; background: var(--line); overflow-x: hidden; overflow-y: auto; }
 .command-rail .rail-section {
   display: flex;
   flex-direction: column;
@@ -271,9 +304,10 @@ button.panel-heading {
   min-height: 0;
   background: var(--panel);
 }
-.command-rail .rail-section.is-open:not(.create-panel) {
-  flex: 1 1 0;
-  min-height: 0;
+.command-rail .rail-section.is-open {
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: 55%;
 }
 .command-rail .rail-section:not(.is-open) > .panel-heading { border-bottom: 0; }
 .rail-section-body { min-height: 0; flex: 1 1 auto; overflow: auto; }
@@ -314,8 +348,36 @@ button.panel-heading {
 .webmcp-diagnostics a { color: var(--acid-text); text-decoration: underline; }
 .webmcp-error { color: var(--error); }
 
-.create-panel.is-open { flex: 0 0 auto; max-height: 46%; }
-.create-body { max-height: min(280px, 36vh); overflow: auto; padding: 11px; }
+.create-quest-control { position: relative; display: inline-flex; }
+.create-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  width: min(360px, calc(100vw - 24px));
+  max-width: 360px;
+  max-height: min(480px, calc(100dvh - 24px));
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 48px var(--shadow);
+}
+.create-popover[open] { display: flex; flex-direction: column; }
+.create-popover:not([open]) { display: none; }
+.create-popover::backdrop { background: color-mix(in srgb, var(--scrim) 42%, transparent); }
+.create-popover-heading {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--panel);
+}
+.create-popover-heading h2 { margin: 0; color: var(--acid-text); font-size: 11px; font-weight: 500; letter-spacing: .08em; }
+.create-popover-body { min-height: 0; overflow: auto; padding: 12px; }
 .create-safety { margin: 0 0 12px; color: var(--muted); font-size: 8px; line-height: 1.5; }
 .quest-form { display: grid; gap: 9px; }
 .quest-form label { display: grid; gap: 4px; color: var(--muted); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
@@ -380,11 +442,9 @@ footer { min-height: 74px; display: flex; justify-content: space-between; gap: 1
   .activity-console { grid-column: 2; grid-row: 1; }
   .primitive-pipeline { grid-column: 1 / span 2; grid-row: 2; }
   .command-rail { grid-column: 1 / span 2; grid-row: 3; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; overflow: visible; }
-  .command-rail .rail-section, .command-rail .rail-section.is-open:not(.create-panel) { flex: none; min-height: 0; }
-  .command-rail .rail-section.is-open:not(.create-panel) { min-height: 240px; }
-  .webmcp-panel, .create-panel { grid-column: auto; }
-  .create-panel { grid-column: 1 / -1; }
-  .create-body { max-height: none; }
+  .command-rail .rail-section, .command-rail .rail-section.is-open { flex: none; min-height: 0; }
+  .command-rail .rail-section.is-open { min-height: 240px; max-height: none; }
+  .webmcp-panel { grid-column: auto; }
 }
 
 @media (max-width: 780px) {
@@ -406,7 +466,7 @@ footer { min-height: 74px; display: flex; justify-content: space-between; gap: 1
   .pipeline-flow { overflow-x: auto; overscroll-behavior-inline: contain; grid-template-columns: repeat(5, minmax(120px, 1fr)); }
   .command-grid > *, .command-rail > *, .pipeline-flow { width: 100%; max-width: 100%; min-width: 0; }
   .command-rail { display: flex; overflow: visible; }
-  .webmcp-panel, .create-panel { border-top: 1px solid var(--line); }
+  .webmcp-panel { border-top: 1px solid var(--line); }
   .command-rail .rail-section.is-open .rail-section-body { max-height: 360px; }
   .work-row { grid-template-columns: 84px minmax(0, 1fr); }
   .work-row time { grid-column: 2; }
