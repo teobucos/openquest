@@ -1,18 +1,16 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // Destructive-reset regression test (spec section 70).
 //
 // Builds a scratch database in an isolated temp dir containing old-fixture-like
-// junk plus live Quests/Contributions/Reviews/sessions/rate-limits, runs the
-// reset.sql equivalent (demo/reset.sql when the fixture author has landed it,
-// otherwise the inline ordered-delete contract), asserts every application
-// table is empty, then seeds demo/seed.sql and asserts the expected fixture
-// counts from demo/expected-state.json (supports both fixture v1 and v2
-// shapes so the reset regression holds before and after the v2 reland).
+// junk plus live Quests/Contributions/Reviews/sessions/rate-limits, runs
+// demo/reset.sql, asserts every application table is empty, then seeds
+// demo/seed.sql and asserts the expected fixture counts from
+// demo/expected-state.json (fixture v2 is final).
 //
 // Safety: bun:sqlite file in a fresh mkdtemp dir only. Never touches a real
 // demo deployment. Skips when the environment indicates a remote target.
@@ -27,24 +25,6 @@ const APP_TABLES = [
   "rate_limits",
   "sessions",
 ] as const;
-
-// Ordered-delete + AUTOINCREMENT-reset contract for demo/reset.sql.
-// Used only when demo/reset.sql does not exist yet (fixture lands
-// concurrently); the guarded wrapper scripts/reset-demo-world.mjs always
-// requires the real demo/reset.sql file.
-const RESET_CONTRACT_SQL = `
-PRAGMA foreign_keys = OFF;
-DELETE FROM reviews;
-DELETE FROM contributions;
-DELETE FROM events;
-DELETE FROM challenges;
-DELETE FROM quests;
-DELETE FROM organizations;
-DELETE FROM rate_limits;
-DELETE FROM sessions;
-DELETE FROM sqlite_sequence WHERE name = 'events';
-PRAGMA foreign_keys = ON;
-`;
 
 const TOKEN_A = "a".repeat(64);
 const TOKEN_B = "b".repeat(64);
@@ -110,10 +90,8 @@ test("destructive demo reset clears the old world, then seed restores the expect
     expect(tableCount(database, "events")).toBeGreaterThan(0);
     expect(tableCount(database, "rate_limits")).toBe(1);
 
-    // Run demo/reset.sql when landed, else the equivalent inline contract.
-    const resetSql = existsSync("demo/reset.sql")
-      ? await Bun.file("demo/reset.sql").text()
-      : RESET_CONTRACT_SQL;
+    // Run demo/reset.sql.
+    const resetSql = await Bun.file("demo/reset.sql").text();
     database.exec(resetSql);
 
     // After reset: every application table is empty, schema is preserved,
@@ -138,7 +116,7 @@ test("destructive demo reset clears the old world, then seed restores the expect
 
     // Then seed the fixture and assert the expected state.
     database.exec(await Bun.file("demo/seed.sql").text());
-    // SAFETY: demo/expected-state.json is a repo-owned fixture contract with known count fields.
+    // SAFETY: demo/expected-state.json is a repo-owned fixture contract with known count fields (fixture v2).
     const expected = (await Bun.file("demo/expected-state.json").json()) as {
       fixture_version: number;
       organizations: number;
@@ -147,16 +125,14 @@ test("destructive demo reset clears the old world, then seed restores the expect
       contributors: number;
       public_events: number;
       reopened_history: number;
-      work_stream?: { open: number; resolved: number; review?: number; awaiting_review?: number };
-      open?: number;
-      awaiting_review?: number;
-      review?: number;
-      resolved?: number;
+      open: number;
+      awaiting_review: number;
+      resolved: number;
     };
-    const workStream = expected.work_stream ?? expected;
-    const expectedOpen = workStream.open ?? 0;
-    const expectedReview = workStream.awaiting_review ?? workStream.review ?? 0;
-    const expectedResolved = workStream.resolved ?? 0;
+    expect(expected.fixture_version).toBe(2);
+    const expectedOpen = expected.open;
+    const expectedReview = expected.awaiting_review;
+    const expectedResolved = expected.resolved;
 
     const count = (sql: string) =>
       // SAFETY: bun:sqlite returns a column-named row for these COUNT(*) SELECTs.
@@ -191,15 +167,13 @@ test("destructive demo reset clears the old world, then seed restores the expect
       last: expected.public_events,
     });
 
-    // Junk and legacy rows are gone and were not recreated by the seed.
+    // Junk and legacy rows are gone and were not recreated by the seed (fixture v2).
     expect(count("SELECT COUNT(*) AS count FROM quests WHERE id IN ('junk_quest_live', 'quest_open_cancer_research')")).toBe(0);
     expect(count("SELECT COUNT(*) AS count FROM sessions WHERE id GLOB 'junk_session_*'")).toBe(0);
     expect(count("SELECT COUNT(*) AS count FROM rate_limits WHERE bucket_key GLOB 'junk:*'")).toBe(0);
-    if (expected.fixture_version === 2) {
-      expect(count("SELECT COUNT(*) AS count FROM quests WHERE id = 'demo_quest_tide'")).toBe(0);
-      expect(count("SELECT COUNT(*) AS count FROM organizations WHERE verification_status = 'verified'")).toBe(0);
-      expect(count("SELECT COUNT(*) AS count FROM organizations WHERE ror_id IS NOT NULL")).toBe(0);
-    }
+    expect(count("SELECT COUNT(*) AS count FROM quests WHERE id = 'demo_quest_tide'")).toBe(0);
+    expect(count("SELECT COUNT(*) AS count FROM organizations WHERE verification_status = 'verified'")).toBe(0);
+    expect(count("SELECT COUNT(*) AS count FROM organizations WHERE ror_id IS NOT NULL")).toBe(0);
   } finally {
     database.close();
     rmSync(scratchDir, { force: true, recursive: true });
