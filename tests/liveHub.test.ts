@@ -154,6 +154,24 @@ describe("mergeConfiguredLiveOrigins", () => {
     expect(mergeConfiguredLiveOrigins({})).toBeUndefined();
   });
 
+  it("treats an explicit undefined allowlist as same-origin, matching unconfigured serve", async () => {
+    const hasQuest = async () => true;
+    const accepted = await validateLiveSocketRequest(
+      liveRequest("/api/live", "https://openquest.test"),
+      hasQuest,
+      mergeConfiguredLiveOrigins({}),
+    );
+    const rejected = await validateLiveSocketRequest(
+      liveRequest("/api/live", "https://evil.example"),
+      hasQuest,
+      mergeConfiguredLiveOrigins({}),
+    );
+
+    expect(accepted).toEqual({ questId: undefined });
+    if (!(rejected instanceof Response)) throw new Error("Expected an origin rejection response.");
+    expect(rejected.status).toBe(403);
+  });
+
   it("accepts the merged canonical and tailnet origins and rejects others", async () => {
     const allowed = mergeConfiguredLiveOrigins({ OPENQUEST_PUBLIC_ORIGIN: tailnetOrigin });
     if (allowed === undefined) throw new Error("Expected a configured origin allowlist.");

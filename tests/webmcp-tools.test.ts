@@ -59,5 +59,4 @@ test("each shipped WebMCP description contains the spec §17 intent sentences", 
       expect(tool.description).toContain(sentence);
     }
   }
-  expect(OPENQUEST_WEBMCP_TOOLS[1].description).toContain("specific open Challenge or pending Contribution");
 });

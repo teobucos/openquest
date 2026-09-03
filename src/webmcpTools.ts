@@ -20,7 +20,7 @@ export const OPENQUEST_WEBMCP_TOOLS = [
   },
   {
     annotations: readAnnotations,
-    description: "Find useful public work for this agent to do next. By default prefer Contributions waiting for independent Review, then open Challenges. Scope by Quest or mode, or request one specific Challenge or Contribution by canonical ID. This does not reserve work. Targeting names one specific open Challenge or pending Contribution by canonical ID.",
+    description: "Find useful public work for this agent to do next. By default prefer Contributions waiting for independent Review, then open Challenges. Scope by Quest or mode, or request one specific Challenge or Contribution by canonical ID. This does not reserve work.",
     inputSchema: WebMCPToolInputJsonSchemas.openquest_next,
     name: "openquest_next",
     title: "Find useful open work",

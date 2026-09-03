@@ -51,7 +51,8 @@ export async function validateLiveSocketRequest(
     return invalidLiveRequest("WebSocket upgrade required.", 426);
   }
   const origin = request.headers.get("origin");
-  const allowed = Array.isArray(allowedOrigins) ? allowedOrigins : [allowedOrigins];
+  const resolved = allowedOrigins ?? new URL(request.url).origin;
+  const allowed = Array.isArray(resolved) ? resolved : [resolved];
   if (origin && !allowed.includes(origin)) {
     return invalidLiveRequest("Live transport origin is not allowed.", 403);
   }
