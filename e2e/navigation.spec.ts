@@ -203,8 +203,23 @@ test("the command center has no document horizontal overflow at target viewports
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
+    await expect(page.locator(".metric-value").first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   }
+});
+
+test("the command center follows the system color scheme", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#scope-title")).toBeVisible();
+  await expect(page.locator("meta[name=color-scheme]")).toHaveAttribute("content", "light dark");
+
+  await page.emulateMedia({ colorScheme: "light" });
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(243, 245, 243)");
+  expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe("rgb(12, 16, 18)");
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(9, 12, 13)");
+  expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe("rgb(230, 232, 232)");
 });
 
 test("long public stream text, filters, and activity stay readable at target viewports", async ({ browser }) => {
