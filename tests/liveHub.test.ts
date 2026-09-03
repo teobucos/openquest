@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { resolveAllowedLiveOrigins, validateLiveSocketRequest } from "../src/liveScope";
+import {
+  OPENQUEST_CANONICAL_PUBLIC_ORIGIN,
+  mergeConfiguredLiveOrigins,
+  resolveAllowedLiveOrigins,
+  validateLiveSocketRequest,
+} from "../src/liveScope";
 
 function liveRequest(path: string, origin?: string): Request {
   const headers = new Headers({ upgrade: "websocket" });
@@ -122,5 +127,56 @@ describe("resolveAllowedLiveOrigins", () => {
     expect(
       resolveAllowedLiveOrigins({ OPENQUEST_PUBLIC_ORIGINS: " https://a.example ,, https://b.example " }),
     ).toEqual(["https://a.example", "https://b.example"]);
+  });
+});
+
+describe("mergeConfiguredLiveOrigins", () => {
+  const tailnetOrigin = "https://zeus.tail273bdb.ts.net:8449";
+
+  it("appends the canonical public origin to a configured tailnet origin", () => {
+    expect(
+      mergeConfiguredLiveOrigins({ OPENQUEST_PUBLIC_ORIGIN: tailnetOrigin }),
+    ).toEqual([tailnetOrigin, OPENQUEST_CANONICAL_PUBLIC_ORIGIN]);
+  });
+
+  it("does not duplicate the canonical origin when it is already configured", () => {
+    expect(
+      mergeConfiguredLiveOrigins({
+        OPENQUEST_PUBLIC_ORIGINS: `${OPENQUEST_CANONICAL_PUBLIC_ORIGIN}, ${tailnetOrigin}`,
+      }),
+    ).toEqual([OPENQUEST_CANONICAL_PUBLIC_ORIGIN, tailnetOrigin]);
+    expect(
+      mergeConfiguredLiveOrigins({ OPENQUEST_PUBLIC_ORIGIN: OPENQUEST_CANONICAL_PUBLIC_ORIGIN }),
+    ).toEqual([OPENQUEST_CANONICAL_PUBLIC_ORIGIN]);
+  });
+
+  it("returns undefined when no live origins are configured so same-origin fallback remains", () => {
+    expect(mergeConfiguredLiveOrigins({})).toBeUndefined();
+  });
+
+  it("accepts the merged canonical and tailnet origins and rejects others", async () => {
+    const allowed = mergeConfiguredLiveOrigins({ OPENQUEST_PUBLIC_ORIGIN: tailnetOrigin });
+    if (allowed === undefined) throw new Error("Expected a configured origin allowlist.");
+
+    const canonical = await validateLiveSocketRequest(
+      liveRequest("/api/live", OPENQUEST_CANONICAL_PUBLIC_ORIGIN),
+      async () => true,
+      allowed,
+    );
+    const tailnet = await validateLiveSocketRequest(
+      liveRequest("/api/live", tailnetOrigin),
+      async () => true,
+      allowed,
+    );
+    const rejected = await validateLiveSocketRequest(
+      liveRequest("/api/live", "https://evil.example"),
+      async () => true,
+      allowed,
+    );
+
+    expect(canonical).toEqual({ questId: undefined });
+    expect(tailnet).toEqual({ questId: undefined });
+    if (!(rejected instanceof Response)) throw new Error("Expected an origin rejection response.");
+    expect(rejected.status).toBe(403);
   });
 });

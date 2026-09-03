@@ -19,6 +19,8 @@ export interface LiveOriginEnvironment {
   OPENQUEST_PUBLIC_ORIGINS?: string;
 }
 
+export const OPENQUEST_CANONICAL_PUBLIC_ORIGIN = "https://openquest.acronew.dev" as const;
+
 // Comma-separated allowlist so the dashboard can be served live from more
 // than one public origin (e.g. a public domain plus a private tailnet URL).
 // Falls back to the legacy single-origin variable, then to same-origin.
@@ -28,6 +30,13 @@ export function resolveAllowedLiveOrigins(env: LiveOriginEnvironment): string[] 
     : (env.OPENQUEST_PUBLIC_ORIGIN ?? "");
   const origins = raw.split(",").map((origin) => origin.trim()).filter((origin) => origin.length > 0);
   return origins.length > 0 ? origins : undefined;
+}
+
+export function mergeConfiguredLiveOrigins(env: LiveOriginEnvironment): string[] | undefined {
+  const origins = resolveAllowedLiveOrigins(env);
+  if (origins === undefined) return undefined;
+  if (origins.includes(OPENQUEST_CANONICAL_PUBLIC_ORIGIN)) return origins;
+  return [...origins, OPENQUEST_CANONICAL_PUBLIC_ORIGIN];
 }
 
 export async function validateLiveSocketRequest(

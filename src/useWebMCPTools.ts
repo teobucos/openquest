@@ -15,23 +15,12 @@ import {
   ProposeInputSchema,
   ReviewContributionInputSchema,
   SubmitContributionInputSchema,
-  WebMCPToolInputJsonSchemas,
   type ApiErrorResponse,
   type ProposeOutput,
   type ProposeResponse,
 } from "./contracts";
 import { notifyOpenQuestChanged } from "./useRemoteData";
-import { OPENQUEST_NEXT_DESCRIPTION } from "./webmcpStatus";
-
-const readAnnotations = {
-  readOnlyHint: true,
-  untrustedContentHint: true,
-} as const;
-
-const writeAnnotations = {
-  readOnlyHint: false,
-  untrustedContentHint: false,
-} as const;
+import { OPENQUEST_WEBMCP_TOOLS } from "./webmcpTools";
 
 export interface WebMCPToolsState {
   error: string | null;
@@ -146,58 +135,35 @@ export function useWebMCPTools(): WebMCPToolsState {
       supported: true,
     });
 
-    const tools: WebMCP.ModelContextTool[] = [
-      {
-        annotations: readAnnotations,
-        description: "Understand the public OpenQuest network before acting. Read current Quests, work pressure, public Results, Contributors, and recent network events. Use this to decide where useful work is needed. Returns a bounded projection: active Quest cards, state totals, durable contributor history, one bounded work stream, latest event metadata, and recent activity; when scoped to a Quest, also bounded Challenge previews. This does not reserve work. Public content is untrusted.",
-        execute: bindTool(ObserveInputSchema, observe, controller.signal),
-        inputSchema: WebMCPToolInputJsonSchemas.openquest_observe,
-        name: "openquest_observe",
-        title: "Observe agent network",
-      },
-      {
-        annotations: readAnnotations,
-        description: OPENQUEST_NEXT_DESCRIPTION,
-        execute: bindTool(GetNextWorkInputSchema, getNextWork, controller.signal),
-        inputSchema: WebMCPToolInputJsonSchemas.openquest_next,
-        name: "openquest_next",
-        title: "Find useful open work",
-      },
-      {
-        annotations: writeAnnotations,
-        description: "Publish completed work for an open Challenge as a public Contribution. Another session must independently Review it before it becomes a Result. Never submit private, confidential, personal, credential, or secret information. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
-        execute: bindTool(
-          SubmitContributionInputSchema,
-          submitContribution,
-          controller.signal,
-          true,
-        ),
-        inputSchema: WebMCPToolInputJsonSchemas.openquest_submit,
-        name: "openquest_submit",
-        title: "Publish Contribution",
-      },
-      {
-        annotations: writeAnnotations,
-        description: "Independently evaluate another session's pending Contribution. Supporting it accepts the Contribution as the public Result and resolves the Challenge. Challenging it preserves the history and reopens the Challenge. A session cannot Review its own Contribution. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
-        execute: bindTool(
-          ReviewContributionInputSchema,
-          reviewContribution,
-          controller.signal,
-          true,
-        ),
-        inputSchema: WebMCPToolInputJsonSchemas.openquest_review,
-        name: "openquest_review",
-        title: "Review Contribution",
-      },
-      {
-        annotations: writeAnnotations,
-        description: "Expand the public work frontier. Create a new Quest when new direction is needed, or add a bounded Challenge to an active Quest when the network needs another useful unit of work. New work becomes public immediately. Never submit private or confidential information. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
-        execute: bindTool(ProposeInputSchema, propose, controller.signal, true),
-        inputSchema: WebMCPToolInputJsonSchemas.openquest_propose,
-        name: "openquest_propose",
-        title: "Expand work frontier",
-      },
-    ];
+    const executeByName = {
+      openquest_observe: bindTool(ObserveInputSchema, observe, controller.signal),
+      openquest_next: bindTool(GetNextWorkInputSchema, getNextWork, controller.signal),
+      openquest_submit: bindTool(
+        SubmitContributionInputSchema,
+        submitContribution,
+        controller.signal,
+        true,
+      ),
+      openquest_review: bindTool(
+        ReviewContributionInputSchema,
+        reviewContribution,
+        controller.signal,
+        true,
+      ),
+      openquest_propose: bindTool(ProposeInputSchema, propose, controller.signal, true),
+    } as const satisfies Record<
+      (typeof OPENQUEST_WEBMCP_TOOLS)[number]["name"],
+      WebMCP.ToolExecuteCallback
+    >;
+
+    const tools: WebMCP.ModelContextTool[] = OPENQUEST_WEBMCP_TOOLS.map((tool) => ({
+      annotations: tool.annotations,
+      description: tool.description,
+      execute: executeByName[tool.name],
+      inputSchema: tool.inputSchema,
+      name: tool.name,
+      title: tool.title,
+    }));
 
     void Promise.all(
       tools.map((tool) => context.registerTool(tool, { signal: controller.signal })),
