@@ -188,7 +188,7 @@ export function ControlCenter({
         <a className="brand" href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })} aria-label="OpenQuest network"><span className="brand-mark">OQ</span>OPENQUEST</a>
         <ToolStatus tools={tools} />
       </header>
-      <main className="control-center">
+      <main className="control-center" data-build-id={import.meta.env.VITE_OPENQUEST_BUILD_ID ?? "dev"}>
         <section className="scope-header" aria-labelledby="scope-title">
           <div>
             {scopedQuest ? <a className="back-link" href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: route.filter, challengeId: null })}>← WHOLE NETWORK</a> : null}
