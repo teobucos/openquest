@@ -121,8 +121,10 @@ test("invalid Challenge queries do not open the inspector or request Challenge d
 
 test("the agent prompt is specific to the selected scope", async ({ page }) => {
   await page.goto("/");
+  await expandRailSection(page, "WEBMCP TOOL BUS");
   await expect(page.locator(".agent-instruction")).toContainText("Help with whatever is most useful.");
   await page.locator(".quest-row").first().click();
+  await expandRailSection(page, "WEBMCP TOOL BUS");
   await expect(page.locator(".agent-instruction")).toContainText("Help move this Quest forward.");
 });
 
@@ -214,8 +216,8 @@ test("the command center follows the system color scheme", async ({ page }) => {
   await expect(page.locator("meta[name=color-scheme]")).toHaveAttribute("content", "light dark");
 
   await page.emulateMedia({ colorScheme: "light" });
-  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(215, 228, 231)");
-  expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe("rgb(8, 16, 18)");
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(238, 242, 243)");
+  expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe("rgb(12, 18, 20)");
 
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(9, 12, 13)");
@@ -224,21 +226,23 @@ test("the command center follows the system color scheme", async ({ page }) => {
 
 test("the context rail keeps Quests open and collapses the other sections", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "QUESTS" })).toBeVisible();
-  await expect(page.locator("aside.command-rail details.quest-list-panel")).toHaveJSProperty("open", true);
-  await expect(page.locator("aside.command-rail details.contributor-panel")).toHaveJSProperty("open", false);
-  await expect(page.locator("aside.command-rail details.webmcp-panel")).toHaveJSProperty("open", false);
-  await expect(page.getByTestId("session-line")).toBeHidden();
+  const quests = page.locator("aside.command-rail .quest-list-panel .panel-heading");
+  const contributors = page.locator("aside.command-rail .contributor-panel .panel-heading");
+  const webmcp = page.locator("aside.command-rail .webmcp-panel .panel-heading");
+  await expect(quests).toHaveAttribute("aria-expanded", "true");
+  await expect(contributors).toHaveAttribute("aria-expanded", "false");
+  await expect(webmcp).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByTestId("session-line")).toHaveCount(0);
 
   await expandRailSection(page, "WEBMCP TOOL BUS");
   await expect(page.getByTestId("session-line")).toBeVisible();
   await expandRailSection(page, "RECENT CONTRIBUTORS");
   await expect(page.locator(".contributor-list")).toBeVisible();
 
-  await page.getByRole("heading", { name: "QUESTS" }).click();
-  await expect(page.locator("aside.command-rail details.quest-list-panel")).toHaveJSProperty("open", false);
-  await page.getByRole("heading", { name: "QUESTS" }).click();
-  await expect(page.locator("aside.command-rail details.quest-list-panel")).toHaveJSProperty("open", true);
+  await quests.click();
+  await expect(quests).toHaveAttribute("aria-expanded", "false");
+  await quests.click();
+  await expect(quests).toHaveAttribute("aria-expanded", "true");
 });
 
 test("long public stream text, filters, and activity stay readable at target viewports", async ({ browser }) => {
