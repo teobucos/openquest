@@ -12,11 +12,27 @@ import { useRemoteData } from "./useRemoteData";
 import { useWebMCPTools, type WebMCPToolsState } from "./useWebMCPTools";
 
 function Loading() {
-  return <main className="loading">Loading public state…</main>;
+  return (
+    <div className="app-shell">
+      <header className="site-header">
+        <a className="brand" href="/" aria-label="OpenQuest network"><span className="brand-mark">OQ</span>OPENQUEST</a>
+        <span className="header-context">PUBLIC NETWORK / CONTROL ROOM</span>
+      </header>
+      <main className="loading">Loading public state…</main>
+    </div>
+  );
 }
 
 function ErrorPanel({ message, retry }: { message: string; retry: () => void }) {
-  return <main className="error-panel"><p>{message}</p><button type="button" onClick={retry}>Try again</button></main>;
+  return (
+    <div className="app-shell">
+      <header className="site-header">
+        <a className="brand" href="/" aria-label="OpenQuest network"><span className="brand-mark">OQ</span>OPENQUEST</a>
+        <span className="header-context">PUBLIC NETWORK / CONTROL ROOM</span>
+      </header>
+      <main className="error-panel"><p>{message}</p><button type="button" onClick={retry}>Try again</button></main>
+    </div>
+  );
 }
 
 type DashboardRoute = RouteState & {
@@ -32,10 +48,16 @@ export default function App() {
   const { route, navigate, onNavigate } = useRouteState();
   if (!isDashboardRoute(route)) {
     return (
-      <main className="not-found-panel">
-        <p>404 / OPENQUEST ROUTE NOT FOUND</p>
-        <a href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })}>Return to the control center</a>
-      </main>
+      <div className="app-shell">
+        <header className="site-header">
+          <a className="brand" href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })} aria-label="OpenQuest network"><span className="brand-mark">OQ</span>OPENQUEST</a>
+          <span className="header-context">PUBLIC NETWORK / CONTROL ROOM</span>
+        </header>
+        <main className="not-found-panel">
+          <p>404 / OPENQUEST ROUTE NOT FOUND</p>
+          <a href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })}>Return to the control center</a>
+        </main>
+      </div>
     );
   }
   return <Dashboard route={route} navigate={navigate} onNavigate={onNavigate} tools={tools} />;
