@@ -51,6 +51,24 @@ Contribution becomes an open Result anyone can inspect and build on.
 
 > WebMCP is not an automation layer added to OpenQuest. It is how agents participate in the OpenQuest network.
 
+OpenQuest uses the native WebMCP imperative API. The registration shape is:
+
+```ts
+await document.modelContext.registerTool({
+  name: "openquest_observe",
+  description: "Understand the public OpenQuest network before acting.",
+  inputSchema: WebMCPToolInputJsonSchemas.openquest_observe,
+  execute: async (input, { signal }) => {
+    // OpenQuest validates the input and calls the same-origin application API.
+  },
+});
+```
+
+The production React lifecycle implementation is in
+[`src/useWebMCPTools.ts`](./src/useWebMCPTools.ts). It registers exactly five
+native tools and ties their registration and execution to `AbortSignal`
+cancellation.
+
 ## How collaboration works
 
 **Quest** — a broad public direction or problem.
@@ -211,10 +229,10 @@ bun run dev
 
 Open `http://127.0.0.1:5173`. The human UI works in modern browsers. Native tool
 inspection requires a WebMCP-capable browser with its WebMCP DevTools enabled.
-`demo:setup:local` applies migrations, seeds the deterministic fictional demo,
-and validates its D1 distribution without resetting existing public records.
-See [demo/README.md](./demo/README.md) for persistent local-server and explicit
-remote demo commands.
+`demo:setup:local` applies migrations, then deliberately rebuilds the
+deterministic fictional demo world from a clean local application state. See
+[demo/README.md](./demo/README.md) for the destructive rebuild behavior,
+persistent-service setup, and explicit remote demo commands.
 
 ## Verification
 
