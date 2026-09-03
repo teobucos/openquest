@@ -41,6 +41,26 @@ export default function App() {
   return <Dashboard route={route} navigate={navigate} onNavigate={onNavigate} tools={tools} />;
 }
 
+function liveScopeFor(
+  route: DashboardRoute,
+  scopedQuest: ObserveResponse["quests"][number] | null,
+) {
+  if (route.scope.kind === "network") return {};
+  if (!scopedQuest) return null;
+  return { questId: scopedQuest.id };
+}
+
+function DashboardGate({
+  error,
+  retry,
+}: {
+  error: string | null;
+  retry: () => void;
+}) {
+  if (error) return <ErrorPanel message={error} retry={retry} />;
+  return <Loading />;
+}
+
 function Dashboard({
   route,
   navigate,
@@ -56,27 +76,16 @@ function Dashboard({
   const request = useCallback(() => selectedQuestSlug
     ? observeQuestSlug(selectedQuestSlug, 20)
     : observe({ limit: 20 }), [selectedQuestSlug]);
-  const { data, error, loading, refreshError, reload } = useRemoteData<ObserveResponse>(request);
+  const { data, error, refreshError, reload } = useRemoteData<ObserveResponse>(request);
   const scopedQuest = selectedQuestSlug
     ? data?.quests.find((quest) => quest.slug === selectedQuestSlug) ?? null
     : null;
-  const liveScope = route.scope.kind === "network"
-    ? {}
-    : scopedQuest
-      ? { questId: scopedQuest.id }
-      : null;
   const liveStatus = useLiveUpdates({
     lastSequence: data?.freshness.last_sequence ?? 0,
-    scope: liveScope,
+    scope: liveScopeFor(route, scopedQuest),
   });
-  const unresolvedScope = route.scope.kind === "quest" && !scopedQuest;
-  if (unresolvedScope) {
-    const scopeError = refreshError ?? error;
-    if (scopeError) return <ErrorPanel message={scopeError} retry={reload} />;
-    return <Loading />;
+  if (!data || (route.scope.kind === "quest" && !scopedQuest)) {
+    return <DashboardGate error={refreshError ?? error} retry={reload} />;
   }
-  if (error && !data) return <ErrorPanel message={error} retry={reload} />;
-  if (loading && !data) return <Loading />;
-  if (!data) return <Loading />;
   return <ControlCenter data={data} tools={tools} route={route} navigate={navigate} onNavigate={onNavigate} refreshError={refreshError} liveStatus={liveStatus} />;
 }

@@ -4,6 +4,7 @@ import {
   CreateQuestInputSchema,
   FreshnessSchema,
   isOfficialOrganization,
+  GetNextWorkInputSchema,
   ObserveInputSchema,
   ObserveResponseSchema,
   OrganizationCategorySchema,
@@ -38,6 +39,7 @@ describe("OpenQuest live-domain contracts", () => {
       quests: [{ ...quest, counts: { awaiting_review: 0, open: 0, resolved: 0 } }],
       recent_contributors: [],
       totals: { awaiting_review: 0, open: 0, resolved: 0 },
+      viewer: null,
       work_stream: [],
     }).success).toBe(true);
     expect(ObserveResponseSchema.safeParse({
@@ -47,6 +49,7 @@ describe("OpenQuest live-domain contracts", () => {
       quests: [{ ...quest, counts: { awaiting_review: 0, open: 0, resolved: 0 }, is_demo: undefined }],
       recent_contributors: [],
       totals: { awaiting_review: 0, open: 0, resolved: 0 },
+      viewer: null,
       work_stream: [],
     }).success).toBe(false);
   });
@@ -91,6 +94,7 @@ describe("OpenQuest live-domain contracts", () => {
       quests: [{ ...quest, counts: { open: 1, awaiting_review: 1, resolved: 1 } }], totals: { open: 1, awaiting_review: 1, resolved: 1 }, contributor_count: 4,
       recent_contributors: [{ actor_label: "Contributor A", quest: { id: quest.id, slug: quest.slug, title: quest.title, is_demo: true, organization }, last_event: "contribution.created", last_entity_id: "contribution_pending", last_summary: "Contribution submitted: Cross-check one claim", last_active_at: timestamp, activity_count: 2 }],
       work_stream: [], freshness: { server_time: timestamp, last_sequence: 42, event_count: 41 }, activity: [],
+      viewer: { actor_label: "Agent 9D2DB8BE" },
     });
     expect(observation.contributor_count).toBe(4);
     expect(FreshnessSchema.safeParse({ server_time: timestamp, last_sequence: 2 }).success).toBe(false);
@@ -108,5 +112,55 @@ describe("OpenQuest live-domain contracts", () => {
     expect(Object.keys(WebMCPToolInputJsonSchemas).sort()).toEqual(["openquest_next", "openquest_observe", "openquest_propose", "openquest_review", "openquest_submit"]);
     expect(WebMCPToolInputJsonSchemas.openquest_observe.properties?.quest_id).toMatchObject({ description: "Canonical Quest ID returned by OpenQuest. Do not use the human-readable URL slug." });
     expect(WebMCPToolInputJsonSchemas.openquest_observe.properties).not.toHaveProperty("quest_slug");
+  });
+
+  it("keeps openquest_next closed while allowing optional Challenge or Contribution targets", () => {
+    const schema = WebMCPToolInputJsonSchemas.openquest_next;
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties).toMatchObject({
+      challenge_id: {
+        description: "Optional canonical open Challenge ID. When supplied, return this specific Contribution task instead of automatic work selection. Do not combine with `contribution_id` or Review-only mode.",
+      },
+      contribution_id: {
+        description: "Optional canonical pending Contribution ID. When supplied, return this specific Review task instead of automatic work selection. Do not combine with `challenge_id` or Contribution-only mode.",
+      },
+    });
+    expect(GetNextWorkInputSchema.parse({})).toEqual({ mode: "any" });
+    expect(GetNextWorkInputSchema.parse({ mode: "review" })).toEqual({ mode: "review" });
+    expect(GetNextWorkInputSchema.parse({ challenge_id: "challenge_abc123" }).challenge_id).toBe("challenge_abc123");
+    expect(GetNextWorkInputSchema.parse({ contribution_id: "contribution_abc123", mode: "review" }).contribution_id)
+      .toBe("contribution_abc123");
+    expect(GetNextWorkInputSchema.safeParse({ challenge_id: "challenge_1", contribution_id: "contribution_1" }).success)
+      .toBe(false);
+    expect(GetNextWorkInputSchema.safeParse({ challenge_id: "challenge_1", mode: "review" }).success).toBe(false);
+    expect(GetNextWorkInputSchema.safeParse({ contribution_id: "contribution_1", mode: "contribute" }).success)
+      .toBe(false);
+    expect(GetNextWorkInputSchema.safeParse({ session_id: "secret" }).success).toBe(false);
+  });
+
+  it("projects a nullable viewer without session, cookie, or hash fields", () => {
+    const observation = {
+      activity: [],
+      contributor_count: 0,
+      freshness: { event_count: 0, last_sequence: 0, server_time: timestamp },
+      quests: [],
+      recent_contributors: [],
+      totals: { awaiting_review: 0, open: 0, resolved: 0 },
+      viewer: null,
+      work_stream: [],
+    };
+    expect(ObserveResponseSchema.parse(observation).viewer).toBeNull();
+    expect(ObserveResponseSchema.parse({
+      ...observation,
+      viewer: { actor_label: "Demo Agent 07" },
+    }).viewer).toEqual({ actor_label: "Demo Agent 07" });
+    expect(ObserveResponseSchema.safeParse({ ...observation, viewer: undefined }).success).toBe(false);
+    expect(ObserveResponseSchema.safeParse({ ...observation, cookie: "oq_session=x" }).success).toBe(false);
+    expect(ObserveResponseSchema.safeParse({ ...observation, session_id: "demo_session_07" }).success).toBe(false);
+    expect(ObserveResponseSchema.safeParse({ ...observation, token_hash: "abc" }).success).toBe(false);
+    expect(ObserveResponseSchema.safeParse({
+      ...observation,
+      viewer: { actor_label: "Agent 9D2DB8BE", session_id: "internal" },
+    }).success).toBe(false);
   });
 });

@@ -43,8 +43,21 @@ function sessionSetCookie(token: string, request: Request): string {
   return `${sessionCookie}=${token}; Path=/; HttpOnly; ${secure}SameSite=Lax; Max-Age=31536000`;
 }
 
+const demoSessionPattern = /^demo_session_(\d{2})$/;
+
 export function publicActorLabel(sessionId: string): string {
+  const demoMatch = demoSessionPattern.exec(sessionId);
+  if (demoMatch) return `Demo Agent ${demoMatch[1]}`;
   return `Agent ${sessionId.replaceAll("-", "").slice(-8).toUpperCase()}`;
+}
+
+export interface ViewerProjection {
+  actor_label: string;
+}
+
+export function projectViewer(actor: ActorIdentity | null): ViewerProjection | null {
+  if (!actor) return null;
+  return { actor_label: publicActorLabel(actor.id) };
 }
 
 export async function readIdentity(request: Request, db: D1Database): Promise<ActorIdentity | null> {

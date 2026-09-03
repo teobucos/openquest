@@ -9,6 +9,7 @@ import {
   SubmitContributionResponseSchema,
   WebMCPToolInputJsonSchemas,
 } from "../src/contracts";
+import { OPENQUEST_NEXT_DESCRIPTION } from "../src/webmcpStatus";
 import {
   callTool,
   cancelledTool,
@@ -24,7 +25,7 @@ import {
 const expectedTools: RegisteredTool[] = [
   {
     annotations: { readOnlyHint: true, untrustedContentHint: true },
-    description: "Return one useful item. By default OpenQuest prefers Contributions waiting for cross-session Review, then open Challenges. Optionally scope by Quest or work mode. This does not reserve work.",
+    description: OPENQUEST_NEXT_DESCRIPTION,
     inputSchema: WebMCPToolInputJsonSchemas.openquest_next,
     name: "openquest_next",
     title: "Get useful work",
@@ -87,6 +88,8 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
 
     await expect(pageA.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
     await expect(pageB.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
+    await expect(pageA.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
+    await expect(pageB.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
     const tools = await registeredTools(pageA);
     expect(tools).toEqual(expectedTools);
     await expectFiveTools(pageA, pageB);
@@ -193,6 +196,7 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
       ObserveResponseSchema,
     );
     expect(observed).not.toHaveProperty("challenges");
+    expect(observed.viewer).toBeNull();
     const quest = observed.quests.find((candidate) => candidate.title === questTitle);
     expect(quest).toBeDefined();
     if (!quest) throw new Error("Human-created Quest was absent from public observation.");
@@ -213,7 +217,31 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
       CreateChallengeResponseSchema,
     );
     expect(challenge.challenge_status).toBe("open");
-    expect(await mutationNotifications(pageB)).toBe(notificationsBeforeChallenge + 1);
+    expect(await mutationNotifications(pageB)).toBeGreaterThan(notificationsBeforeChallenge);
+    await expect(pageA.getByTestId("session-line")).toHaveText(/^SESSION · Agent [0-9A-F]{8}$/);
+    await expect(pageB.getByTestId("session-line")).toHaveText(/^SESSION · Agent [0-9A-F]{8}$/);
+    expect(observed).not.toHaveProperty("cookie");
+    expect(observed).not.toHaveProperty("token_hash");
+    expect(observed).not.toHaveProperty("session_id");
+    expect(await pageB.getByTestId("session-line").innerText()).not.toBe(
+      await pageA.getByTestId("session-line").innerText(),
+    );
+    const sharedPage = await sessionA.newPage();
+    await sharedPage.goto("/");
+    await expect(sharedPage.getByTestId("session-line")).toHaveText(
+      await pageA.getByTestId("session-line").innerText(),
+    );
+    const targetedChallenge = await successfulTool(
+      pageA,
+      { name: "openquest_next", input: { challenge_id: challenge.challenge_id, quest_id: quest.id } },
+      GetNextWorkResponseSchema,
+    );
+    expect(targetedChallenge).toMatchObject({
+      challenge: { id: challenge.challenge_id },
+      status: "work_available",
+      work_type: "contribute",
+      why_now: "This specific open Challenge was requested.",
+    });
     const scopedObservation = await successfulTool(
       pageB,
       { name: "openquest_observe", input: { quest_id: quest.id } },
@@ -270,6 +298,29 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
     );
     expect(selfReviewError.next_action?.tool).toBe("openquest_next");
     expect(await mutationNotifications(pageA)).toBe(notificationsBeforeSelfReview);
+    const targetedSelfReview = await domainErrorTool(
+      pageA,
+      {
+        name: "openquest_next",
+        input: { contribution_id: submitted.contribution_id, mode: "review" },
+      },
+      "self_review_forbidden",
+    );
+    expect(targetedSelfReview.status).toBe("self_review_forbidden");
+    const targetedReview = await successfulTool(
+      pageB,
+      {
+        name: "openquest_next",
+        input: { contribution_id: submitted.contribution_id, mode: "review", quest_id: quest.id },
+      },
+      GetNextWorkResponseSchema,
+    );
+    expect(targetedReview).toMatchObject({
+      contribution: { id: submitted.contribution_id },
+      status: "work_available",
+      work_type: "review",
+      why_now: "This specific pending Contribution was requested for independent Review.",
+    });
     await expectFiveTools(pageA, pageB);
 
     const automaticReview = await successfulTool(

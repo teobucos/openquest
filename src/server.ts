@@ -12,6 +12,7 @@ import {
   addressRateLimitKey,
   consumeRateLimit,
   ensureIdentity,
+  projectViewer,
   readIdentity,
 } from "./identity";
 import {
@@ -134,9 +135,11 @@ async function handleApi(request: Request, env: Env, context?: ExecutionContext)
     const questId = identifierQuerySchema.parse(url.searchParams.get("quest_id") ?? undefined);
     const questSlug = slugQuerySchema.parse(url.searchParams.get("quest_slug") ?? undefined);
     if (questId && questSlug) fail(400, "invalid_input", "Use either quest_id or quest_slug, not both.");
-    return json(questSlug
+    const identity = await readIdentity(request, env.DB);
+    const state = questSlug
       ? await observeStateForSlug(env.DB, questSlug, limit)
-      : await observeState(env.DB, questId, limit));
+      : await observeState(env.DB, questId, limit);
+    return json({ ...state, viewer: projectViewer(identity) });
   }
 
   const questMatch = /^\/api\/quests\/([^/]+)$/.exec(url.pathname);

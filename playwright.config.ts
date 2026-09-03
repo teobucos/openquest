@@ -2,11 +2,12 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  outputDir: "./test-results/runs",
   // Worker WebSocket coverage owns its own real-Worker server on :4178.
   // The default suite deliberately uses the disposable Vite/D1 harness below.
   testIgnore: "live-worker.spec.ts",
-  forbidOnly: Boolean(import.meta.env.CI),
-  retries: import.meta.env.CI ? 2 : 0,
+  forbidOnly: Boolean(process.env.CI),
+  retries: process.env.CI ? 2 : 0,
   workers: 1,
   use: {
     baseURL: "http://127.0.0.1:4174",

@@ -15,7 +15,7 @@ import {
   successfulTool,
 } from "./helpers";
 
-test("home explains unsupported WebMCP and an empty active Quest list", async ({ page }) => {
+test("home explains unavailable WebMCP and an empty active Quest list", async ({ page }) => {
   await page.route("**/api/world*", (route) => route.fulfill({
     body: JSON.stringify({
       activity: [],
@@ -24,6 +24,7 @@ test("home explains unsupported WebMCP and an empty active Quest list", async ({
       quests: [],
       recent_contributors: [],
       totals: { awaiting_review: 0, open: 0, resolved: 0 },
+      viewer: null,
       work_stream: [],
     }),
     contentType: "application/json",
@@ -31,7 +32,15 @@ test("home explains unsupported WebMCP and an empty active Quest list", async ({
   }));
 
   await page.goto("/");
-  await expect(page.getByText("WebMCP · browser unsupported", { exact: true })).toBeVisible();
+  await expect(page.getByText("WebMCP · unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
+  await expect(page.locator(".webmcp-panel span").filter({ hasText: "NOT AVAILABLE" })).toBeVisible();
+  await page.getByText("WebMCP diagnostics", { exact: true }).click();
+  await expect(page.getByText("document.modelContext: NOT DETECTED")).toBeVisible();
+  await expect(page.getByText("chrome://flags/#enable-webmcp-testing")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Chrome WebMCP documentation" })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("browser unsupported");
+  await expect(page.locator("body")).not.toContainText("will fix an agent harness");
   const emptyQuestCopy = page.getByText(
     "No active Quests.",
     { exact: true },
@@ -46,6 +55,11 @@ test("OpenQuest keeps public reads inert and returns invalid tool input as struc
   const publicRead = await request.get("/api/world");
   expect(publicRead.status()).toBe(200);
   expect(publicRead.headers()["set-cookie"]).toBeUndefined();
+  const publicWorld = ObserveResponseSchema.parse(await publicRead.json());
+  expect(publicWorld.viewer).toBeNull();
+  expect(publicWorld).not.toHaveProperty("cookie");
+  expect(publicWorld).not.toHaveProperty("token_hash");
+  expect(publicWorld).not.toHaveProperty("session_id");
 
   const readOnlySelection = await request.post("/api/work/next", { data: {} });
   expect(readOnlySelection.status()).toBe(200);
@@ -185,6 +199,22 @@ test("OpenQuest keeps public reads inert and returns invalid tool input as struc
       },
     }, "invalid_input");
     expect(whitespaceError.status).toBe("invalid_input");
+
+    const bothTargets = await domainErrorTool(page, {
+      name: "openquest_next",
+      input: { challenge_id: "challenge_abc123", contribution_id: "contribution_abc123" },
+    }, "invalid_input");
+    expect(bothTargets.status).toBe("invalid_input");
+    const reviewChallengeTarget = await domainErrorTool(page, {
+      name: "openquest_next",
+      input: { challenge_id: "challenge_abc123", mode: "review" },
+    }, "invalid_input");
+    expect(reviewChallengeTarget.status).toBe("invalid_input");
+    const contributeContributionTarget = await domainErrorTool(page, {
+      name: "openquest_next",
+      input: { contribution_id: "contribution_abc123", mode: "contribute" },
+    }, "invalid_input");
+    expect(contributeContributionTarget.status).toBe("invalid_input");
 
     const invalidWorkerResponse = await page.request.post("/api/contributions", {
       data: {

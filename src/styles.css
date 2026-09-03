@@ -15,6 +15,7 @@
   --blue: light-dark(#00669b, #87c8ff);
   --orange: light-dark(#984900, #ffaf68);
   --error: light-dark(#b42318, #ff8f82);
+  --live-effect-duration: 1250ms;
   color: var(--ink);
   background: var(--canvas);
   font-family: "Manrope", sans-serif;
@@ -44,7 +45,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .live-indicator.is-reconnecting { color: var(--orange); }
 .live-indicator.is-degraded { color: var(--error); }
 .sync-stamp, .scope-provenance, .panel-heading span, .work-state, .work-row time, .recent-badge { color: var(--muted); }
-.sync-stamp.is-fresh { color: var(--acid); animation: canonical-update 750ms ease-out; }
+.sync-stamp.is-fresh { color: var(--acid); animation: canonical-update var(--live-effect-duration) ease-out; }
 .scope-provenance { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 13px; font: 10px "DM Mono", monospace; letter-spacing: .08em; }
 .back-link { color: var(--acid); font: 11px "DM Mono", monospace; letter-spacing: .08em; }
 .telemetry-rail { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); margin-bottom: 18px; }
@@ -52,7 +53,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .telemetry-cell:last-child { border-right: 0; }
 .telemetry-cell span, .telemetry-cell small { color: var(--muted); font: 10px "DM Mono", monospace; letter-spacing: .05em; text-transform: uppercase; }
 .telemetry-cell small { min-height: 24px; line-height: 1.35; }
-.telemetry-cell strong { font-size: clamp(28px, 3vw, 42px); line-height: .9; letter-spacing: -.06em; }
+.telemetry-cell strong { font-size: clamp(28px, 3vw, 42px); line-height: .9; letter-spacing: -.06em; display: flex; align-items: baseline; gap: 10px; }
+.metric-delta { color: var(--acid); font: 500 14px "DM Mono", monospace; letter-spacing: .04em; }
 .telemetry-cell[data-tone="attention"] strong { color: var(--orange); }
 .telemetry-cell[data-tone="review"] strong { color: var(--blue); }
 .telemetry-cell[data-tone="active"] strong { color: var(--acid); }
@@ -66,25 +68,26 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .work-filters button.is-selected, .work-filters button:hover { color: var(--on-acid); background: var(--acid); border-color: var(--acid); }
 .work-row { appearance: none; width: 100%; display: grid; grid-template-columns: 100px minmax(0, 1fr) auto; gap: 12px; text-align: left; padding: 16px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
 .work-row:hover { background: var(--panel-hover); }
-.work-row.is-fresh, .activity-row.is-fresh { animation: canonical-update 750ms ease-out; }
+.work-row.is-fresh, .activity-row.is-fresh { animation: canonical-update var(--live-effect-duration) ease-out; }
 .work-row[data-state="review"] .work-state { color: var(--blue); }
 .work-row[data-state="open"] .work-state { color: var(--orange); }
 .work-row[data-state="resolved"] .work-state { color: var(--acid); }
 .work-state, .work-row time { font: 10px "DM Mono", monospace; letter-spacing: .04em; }
+.work-row time { color: color-mix(in srgb, var(--ink) 42%, var(--muted)); }
 .work-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .work-copy strong, .work-copy span, .work-copy small { overflow-wrap: anywhere; }
 .work-copy strong { font-size: 14px; }
-.work-copy span { color: var(--muted); font-size: 12px; line-height: 1.4; }
-.work-copy small { color: var(--acid); font: 10px "DM Mono", monospace; line-height: 1.4; }
-.work-quest-title { color: var(--acid) !important; font: 10px "DM Mono", monospace !important; letter-spacing: .04em; }
+.work-copy span { color: color-mix(in srgb, var(--ink) 28%, var(--muted)); font-size: 12px; line-height: 1.4; }
+.work-copy small { color: var(--acid); font: 10px "DM Mono", monospace; line-height: 1.45; }
+.work-quest-title { color: color-mix(in srgb, var(--acid) 82%, var(--ink)) !important; font: 10px "DM Mono", monospace !important; letter-spacing: .04em; }
 .work-challenge-description { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .activity-list { max-height: 630px; overflow: auto; }
 .activity-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 10px; padding: 15px; border-bottom: 1px solid var(--line); }
 .activity-icon { color: var(--acid); font: 11px "DM Mono", monospace; }
 .activity-row div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .activity-row strong { font-size: 13px; overflow-wrap: anywhere; }
-.activity-meta { display: flex; gap: 7px; color: var(--muted); font: 10px "DM Mono", monospace; overflow-wrap: anywhere; }
-.activity-row time { color: var(--muted); font: 10px "DM Mono", monospace; white-space: nowrap; }
+.activity-meta { display: flex; gap: 7px; color: color-mix(in srgb, var(--ink) 38%, var(--muted)); font: 10px "DM Mono", monospace; overflow-wrap: anywhere; }
+.activity-row time { color: color-mix(in srgb, var(--ink) 42%, var(--muted)); font: 10px "DM Mono", monospace; white-space: nowrap; }
 .command-rail { display: grid; gap: 18px; }
 .quest-list, .contributor-list { max-height: 330px; overflow: auto; }
 .quest-row, .contributor-row { display: flex; flex-direction: column; gap: 5px; padding: 14px; border-bottom: 1px solid var(--line); }
@@ -97,8 +100,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .contributor-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
 .recent-badge { font: 9px "DM Mono", monospace; white-space: nowrap; }
 .webmcp-panel { padding-bottom: 14px; }
-.webmcp-panel code, .agent-instruction { display: block; margin: 14px 15px 0; color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.webmcp-panel code, .agent-instruction, .session-line { display: block; margin: 14px 15px 0; color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.session-line { color: var(--muted); font: 11px "DM Mono", monospace; letter-spacing: .06em; }
 .agent-instruction { color: var(--ink); }
+.webmcp-diagnostics { margin: 12px 15px 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.webmcp-diagnostics summary { cursor: pointer; font: 10px "DM Mono", monospace; letter-spacing: .05em; }
+.webmcp-diagnostics ul { margin: 8px 0 0; padding-left: 18px; }
+.webmcp-diagnostics a { color: var(--acid); text-decoration: underline; }
+.webmcp-error { color: var(--error); }
 .create-panel summary { display: flex; justify-content: space-between; padding: 15px; cursor: pointer; font: 500 12px "DM Mono", monospace; letter-spacing: .07em; }
 .quest-form { display: grid; gap: 12px; padding: 0 15px 15px; }
 .quest-form label { display: grid; gap: 6px; color: var(--muted); font: 10px "DM Mono", monospace; }

@@ -69,5 +69,41 @@
         }
       }
     ]
+  },
+  {
+    "name": "Review a specific pending Contribution",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Review pending Contribution contribution_abc123."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "openquest_next",
+        "arguments": {
+          "contribution_id": "contribution_abc123"
+        }
+      }
+    ]
+  },
+  {
+    "name": "Work on a specific Challenge",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Work on Challenge challenge_abc123."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "openquest_next",
+        "arguments": {
+          "challenge_id": "challenge_abc123"
+        }
+      }
+    ]
   }
 ]

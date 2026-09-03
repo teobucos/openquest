@@ -32,10 +32,10 @@ bun run build
 bun run e2e
 ```
 
-The root application install is intentionally anonymous/fork-CI safe. Optional
-maintainer OxSpark linting and local React Doctor commands are documented in
-[tools/quality](./tools/quality/README.md); they require authorized GitHub
-access and are not part of the root application dependency graph.
+The root application install is intentionally anonymous/fork-CI safe. Local
+React Doctor scans use the public CLI (`npx -y react-doctor@latest --yes
+--no-telemetry`). Pull requests also run the pinned public GitHub React Doctor
+Action.
 
 Do not run a remote demo seed as part of normal development or deployment.
 Remote migrations, seeding, verification, deployment, repository visibility,

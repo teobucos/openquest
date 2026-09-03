@@ -5,6 +5,7 @@ import {
   ContributionResponseSchema,
   CreateChallengeResponseSchema,
   CreateQuestResponseSchema,
+  ObserveResponseSchema,
   SubmitContributionResponseSchema,
 } from "../src/contracts";
 
@@ -108,6 +109,41 @@ test("write limits run before identity creation and public identifiers use eight
     } finally {
       await rejectedWriter.close();
     }
+  } finally {
+    await writer.close();
+  }
+});
+
+test("anonymous observation stays cookieless until the first write establishes a public viewer label", async ({ browser }) => {
+  const writer = await browser.newContext({
+    extraHTTPHeaders: { "cf-connecting-ip": `e2e-viewer-${crypto.randomUUID()}` },
+  });
+  try {
+    const anonymous = await writer.request.get("/api/world");
+    expect(anonymous.status()).toBe(200);
+    expect(anonymous.headers()["set-cookie"]).toBeUndefined();
+    const anonymousWorld = ObserveResponseSchema.parse(await anonymous.json());
+    expect(anonymousWorld.viewer).toBeNull();
+    expect(anonymousWorld).not.toHaveProperty("cookie");
+    expect(anonymousWorld).not.toHaveProperty("token_hash");
+    expect(anonymousWorld).not.toHaveProperty("session_id");
+
+    const questResponse = await writer.request.post("/api/quests", {
+      data: {
+        description: "Establish an anonymous viewer label after the first public write.",
+        goal: "Prove observation projects only the public actor label.",
+        title: `Viewer Quest ${crypto.randomUUID()}`,
+      },
+    });
+    expect(questResponse.status()).toBe(201);
+    const established = await writer.request.get("/api/world");
+    expect(established.status()).toBe(200);
+    const establishedWorld = ObserveResponseSchema.parse(await established.json());
+    expect(establishedWorld.viewer?.actor_label).toMatch(/^Agent [0-9A-F]{8}$/);
+    expect(establishedWorld.viewer).not.toHaveProperty("cookie");
+    expect(establishedWorld.viewer).not.toHaveProperty("token_hash");
+    expect(establishedWorld.viewer).not.toHaveProperty("id");
+    expect(establishedWorld.viewer).not.toHaveProperty("session_id");
   } finally {
     await writer.close();
   }

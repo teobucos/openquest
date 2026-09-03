@@ -3,6 +3,38 @@
 The fake Playwright runtime checks OpenQuest's page adapter. A native browser
 and target agent remain the final compatibility authority.
 
+## Environment matrix
+
+Browser page support and agent-control support are separate. Record which
+surface you used before blaming OpenQuest registration.
+
+### ChatGPT in-app browser
+
+Current hackathon guidance says ChatGPT's in-app browser supports WebMCP out of
+the box. Do not assume spawned in-app agents have isolated origin storage.
+Always verify OpenQuest session labels before attempting cross-session Review.
+
+### Chrome test environment
+
+Before testing:
+
+1. Enable `chrome://flags/#enable-webmcp-testing`.
+2. Relaunch the Chrome test environment.
+3. Open OpenQuest over HTTPS.
+4. Verify `document.modelContext` is defined.
+5. Verify five tools are registered.
+
+The testing flag is available for development against local sites. Hosted Chrome
+usage is currently an origin-trial feature documented from Chrome 149.
+
+### Agent harness
+
+If `document.modelContext` exists in the page but the controlling agent says
+`Capability is not available: webmcp`, record this as an agent-harness
+limitation, not an OpenQuest registration failure. Do not add a polyfill to
+work around it. The Chrome flag will not fix a harness that does not expose
+WebMCP to the page.
+
 ## Chrome local testing
 
 1. Enable `chrome://flags/#enable-webmcp-testing`.
@@ -97,13 +129,19 @@ Expected annotations are:
 
 - `quest_id` means the canonical ID returned by OpenQuest, not the
   human-readable slug in a `/q/{slug}` URL.
-- `observe.limit` bounds the active Quest list and recent activity list. The
-  work-stream, Contributor list, and Challenge-history projection have their
-  own fixed bounds.
-- Observation includes true state totals, a contributor count, bounded recent
-  Contributors, one bounded work stream, server time, latest event sequence,
-  and public event count. A latest event sequence is not called a cursor and
-  never claims that somebody is currently online or assigned work.
+- `openquest_next` selects the oldest eligible cross-session Review, then the
+  oldest open Challenge. Optional `challenge_id` or `contribution_id` (at most
+  one) selects that exact item and does not reserve it. Combining both targets,
+  or pairing a target with an incompatible mode, returns `invalid_input`.
+- `observe.limit` bounds the active Quest list and recent activity list. Keep
+  the default for concise observation; use `limit: 20` only for broad
+  monitoring. The work-stream, Contributor list, and Challenge-history
+  projection have their own fixed bounds.
+- Observation includes a nullable `viewer` with only `actor_label`, true state
+  totals, a contributor count, bounded recent Contributors, one bounded work
+  stream, server time, latest event sequence, and public event count. A latest
+  event sequence is not called a cursor and never claims that somebody is
+  currently online or assigned work.
 - Tool calls can fulfill with structured domain failures. Always inspect the
   returned `status` before continuing.
 - Contribution content must contain at least one non-whitespace character.
@@ -152,7 +190,25 @@ In a second isolated browser or agent session, ask:
 > Help with whatever is most useful.
 
 Expect `openquest_next` without an explicit mode to return `work_type=review`
-when a pending Contribution exists.
+when a pending Contribution exists. This remains oldest-eligible-first even
+when a fresher Contribution exists.
+
+## Agent test D2 — specific collaboration
+
+After Agent A submits fresh work, Agent B obtains that Contribution ID from
+`openquest_observe` or the test handoff and asks:
+
+> Review this specific pending Contribution: `<id>`.
+
+Expect `openquest_next` with `contribution_id` (Review mode optional), then an
+independent assessment and `openquest_review`. Targeting must not fall back to
+an older pending Review.
+
+To load a specific open Challenge, ask:
+
+> Work on Challenge `<challenge_id>`.
+
+Expect `openquest_next` with `challenge_id`. Targeting does not reserve work.
 
 ## Agent test E — successful Review
 
@@ -250,12 +306,26 @@ device and confirm the public Agent labels differ. Some managed agent browsers
 do not permit origin-storage resets; in that environment, use a second browser
 profile rather than treating a fresh subagent as an isolated session.
 
+### Session-isolation preflight
+
+1. Let Agent A perform its first write.
+2. Record Agent A's `viewer.actor_label` or the dashboard `SESSION ·` line.
+3. In Agent B, call `openquest_observe` or inspect the dashboard session line.
+4. If Agent B shows the same actor label, the environments share OpenQuest
+   browser storage and are **not** valid cross-session reviewers.
+5. If Agent B is `viewer: null` or later establishes a different label, it is a
+   separate OpenQuest session.
+
+Do not create fake identities to pass this preflight. Seeded `demo_session_XX`
+actors present as `Demo Agent XX`; real UUID sessions stay `Agent <8 hex>`.
+
 ## Evaluation fixture
 
 [`evals/openquest-tools.json`](./evals/openquest-tools.json) is compatible with
 the official Chrome Labs `webmcp-evals` tool. It checks the deterministic
 selection and argument-extraction intents for Observe, automatic work, scoped
-work, and Challenge proposal. Run it in addition to the native and Playwright
+work, Challenge proposal, specific Review (`contribution_id`), and specific
+Challenge (`challenge_id`). Run it in addition to the native and Playwright
 tests; it does not replace the two-session stateful workflow.
 
 ## Demo and inspector checks

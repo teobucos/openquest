@@ -40,5 +40,7 @@ test("the WebMCP evaluation fixture names only current tools and canonical IDs",
       },
       functionName: "openquest_propose",
     },
+    { arguments: { contribution_id: "contribution_abc123" }, functionName: "openquest_next" },
+    { arguments: { challenge_id: "challenge_abc123" }, functionName: "openquest_next" },
   ]);
 });
