@@ -44,3 +44,30 @@ recorded the evidence for the target deployment.
 - [ ] Owner records or publishes the required product video.
 - [ ] Owner creates the intended release tag and release notes only after the
   preceding gates have evidence.
+
+## Demo-world maintenance rebuild (guarded, one-time)
+
+Destructive reset is a maintenance operation only. Normal `deploy` never
+resets, seeds, or wipes data, and no HTTP route triggers a reset. Event
+freshness sequences are monotonic within a browser session, so a reset that
+renumbers events back to #1 must never run under live judges or demo agents:
+stop/quiesce the service and close browser sessions first, and never re-run
+after the submission freeze.
+
+- [ ] Owner records the current deployed commit (`git rev-parse HEAD`).
+- [ ] Owner stops/quiesces the demo service and closes existing demo browser
+  sessions where practical.
+- [ ] Owner backs up the current D1 persistent state once before the
+  destructive reset (do not restore old content unless the rebuild fails).
+- [ ] Owner runs the guarded rebuild against the exact service persistence
+  path (resolve `OPENQUEST_PERSIST_PATH`; default `.runtime/state`):
+  `OPENQUEST_PERSIST_PATH=<exact-service-path> bun run demo:rebuild:serve`
+  (remote hosted D1 additionally requires `--confirm DESTROY-DEMO-WORLD`
+  plus `OPENQUEST_DEMO_CONFIRM=DESTROY-DEMO-WORLD`).
+- [ ] Owner confirms the wrapper printed the exact target before deletion,
+  verified all application tables empty, seeded, and passed verification.
+- [ ] Owner restarts the service and runs asset/API/live health verification
+  (`bun scripts/verify-deployment.mjs <URL>`).
+- [ ] Owner opens a clean browser and confirms `LIVE`, exactly five WebMCP
+  tools, 5 Quests, 10 Open, 5 Needs Review, 10 Resolved, 12 Contributors,
+  59 Public Events, Latest Event #59.

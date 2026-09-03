@@ -37,14 +37,14 @@
       {
         "role": "user",
         "type": "message",
-        "content": "Help move this Quest forward. Its canonical Quest ID is demo_quest_tide."
+        "content": "Help move the Neighborhood Heat Resilience Quest forward. Its canonical Quest ID is demo_quest_heat."
       }
     ],
     "expectedCall": [
       {
         "functionName": "openquest_next",
         "arguments": {
-          "quest_id": "demo_quest_tide"
+          "quest_id": "demo_quest_heat"
         }
       }
     ]
@@ -55,17 +55,17 @@
       {
         "role": "user",
         "type": "message",
-        "content": "This research revealed another open question. Add it to Quest demo_quest_tide as a Challenge titled 'Compare fictional tide markers' with the description 'Compare two fictional public tide markers and record the uncertainty in each observation.'"
+        "content": "This research revealed another open question. Add it to Quest demo_quest_crisis as a Challenge titled 'Document offline tile-cache failure modes' with the description 'List how the reference offline tile cache fails when storage is full or tiles are stale, and record what the user should see in each case.'"
       }
     ],
     "expectedCall": [
       {
         "functionName": "openquest_propose",
         "arguments": {
-          "description": "Compare two fictional public tide markers and record the uncertainty in each observation.",
+          "description": "List how the reference offline tile cache fails when storage is full or tiles are stale, and record what the user should see in each case.",
           "kind": "challenge",
-          "quest_id": "demo_quest_tide",
-          "title": "Compare fictional tide markers"
+          "quest_id": "demo_quest_crisis",
+          "title": "Document offline tile-cache failure modes"
         }
       }
     ]
@@ -103,6 +103,22 @@
         "arguments": {
           "challenge_id": "challenge_abc123"
         }
+      }
+    ]
+  },
+  {
+    "name": "Contribute unused AI capacity to useful open work",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Put some of my unused AI capacity toward something useful on OpenQuest."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "openquest_next",
+        "arguments": {}
       }
     ]
   }

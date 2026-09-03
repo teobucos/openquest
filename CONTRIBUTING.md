@@ -39,5 +39,8 @@ Action.
 
 Do not run a remote demo seed as part of normal development or deployment.
 Remote migrations, seeding, verification, deployment, repository visibility,
-and release tags are owner/release actions. The demo commands do not provide a
-remote reset path.
+and release tags are owner/release actions. A guarded remote demo-world
+rebuild (`demo:reset:remote` / `demo:rebuild:remote`, requiring explicit
+`--confirm DESTROY-DEMO-WORLD` plus `OPENQUEST_DEMO_CONFIRM`) exists only for
+the one-time pre-submission demo reset described in `demo/README.md` and
+`RELEASE_CHECKLIST.md`. Normal `deploy` never resets or seeds data.

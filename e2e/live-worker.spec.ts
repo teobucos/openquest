@@ -128,7 +128,7 @@ test("the generated Worker assets serve the real control-center SPA", async ({ p
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
   expect(response?.headers()["content-type"]).toContain("text/html");
-  await expect(page.getByRole("heading", { name: "OPENQUEST CONTROL CENTER" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "OPENQUEST / AGENT NETWORK" })).toBeVisible();
   await expect(page.locator(".live-indicator")).toHaveText("LIVE");
 });
 
@@ -216,7 +216,7 @@ test("two isolated dashboards receive open, Review, and Result state through Wor
     await expect(challengeRow(reviewerPage, challengeTitle)).toHaveAttribute("data-state", "resolved");
     await expect(contributorPage.getByTestId("activity-list")).toContainText(`Resolved: ${challengeTitle}`);
     await contributorPage.getByRole("link", { name: "← WHOLE NETWORK" }).click();
-    await expect(contributorPage.getByRole("heading", { name: "OPENQUEST CONTROL CENTER" })).toBeVisible();
+    await expect(contributorPage.getByRole("heading", { name: "OPENQUEST / AGENT NETWORK" })).toBeVisible();
     await expect(contributorPage.locator(".metric-delta")).toHaveCount(0);
     await expect(contributorPage.locator(".work-row.is-fresh")).toHaveCount(0);
     await openQuestDashboard(contributorPage, quest.slug, questTitle);
@@ -466,7 +466,7 @@ test("targeted openquest_next selects a fresh Review while automatic routing sta
       openQuestDashboard(agentBPage, quest.slug, questTitle),
     ]);
     await Promise.all([expectFiveWebMcpTools(agentAPage), expectFiveWebMcpTools(agentBPage)]);
-    await Promise.all([expandRailSection(agentAPage, "WEBMCP TOOL BUS"), expandRailSection(agentBPage, "WEBMCP TOOL BUS")]);
+    await Promise.all([expandRailSection(agentAPage, "WEBMCP / NATIVE INTERFACE"), expandRailSection(agentBPage, "WEBMCP / NATIVE INTERFACE")]);
     await expect(agentAPage.getByTestId("session-line")).toHaveText(/^SESSION · Agent [0-9A-F]{8}$/);
     await expect(agentBPage.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
 

@@ -114,17 +114,17 @@ test("invalid Challenge queries do not open the inspector or request Challenge d
   });
 
   await page.goto("/?challenge=not%20a%20canonical%20id");
-  await expect(page.getByRole("heading", { name: "OPENQUEST CONTROL CENTER" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "OPENQUEST / AGENT NETWORK" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Challenge inspector" })).toHaveCount(0);
   expect(challengeReads).toBe(0);
 });
 
 test("the agent prompt is specific to the selected scope", async ({ page }) => {
   await page.goto("/");
-  await expandRailSection(page, "WEBMCP TOOL BUS");
+  await expandRailSection(page, "WEBMCP / NATIVE INTERFACE");
   await expect(page.locator(".agent-instruction")).toContainText("Help with whatever is most useful.");
   await page.locator(".quest-row").first().click();
-  await expandRailSection(page, "WEBMCP TOOL BUS");
+  await expandRailSection(page, "WEBMCP / NATIVE INTERFACE");
   await expect(page.locator(".agent-instruction")).toContainText("Help move this Quest forward.");
 });
 
@@ -236,9 +236,9 @@ test("the context rail keeps Quests open and collapses the other sections", asyn
   await expect(page.locator("aside.command-rail .create-panel")).toHaveCount(0);
   await expect(page.getByTestId("session-line")).toHaveCount(0);
 
-  await expandRailSection(page, "WEBMCP TOOL BUS");
+  await expandRailSection(page, "WEBMCP / NATIVE INTERFACE");
   await expect(page.getByTestId("session-line")).toBeVisible();
-  await expandRailSection(page, "RECENT CONTRIBUTORS");
+  await expandRailSection(page, "NETWORK CONTRIBUTORS");
   await expect(page.locator(".contributor-list")).toBeVisible();
 
   await quests.click();

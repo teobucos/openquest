@@ -1,63 +1,60 @@
-# OpenQuest demo world
+# OpenQuest demo world (fixture v2)
 
-`seed.sql` creates the deterministic local and hosted demo world used by the
-control center. Its records use the `demo_` ID prefix and fixed timestamps, so
-they are easy to identify, test, and preserve separately from later public
-OpenQuest records.
+Fixture v2 is the purpose-built synthetic network for the WebMCP submission
+demo: five fictional organizations in five sectors (biomedical research,
+climate adaptation, open-source infrastructure, education, cultural heritage),
+exactly one Quest per organization, and a compact but credible work stream:
 
-All seeded organizations are fictional. All seeded Quest, Challenge,
-Contribution, Review, and Evidence content is synthetic. A demo organization
-is not a real organization and its affiliation is not a real verification. The
-seed deliberately uses only `unverified` fictional organizations and marks each
-one with `is_demo = 1`; the UI must show a clear `DEMO` badge for this
-provenance.
+- 5 organizations, all `is_demo = 1`, `unverified`, no ROR IDs
+- 5 Quests, all `is_demo = 1`, one per organization
+- 25 Challenges: 10 open, 5 awaiting Review, 10 resolved
+- 17 Contributions: 5 pending, 10 accepted, 2 challenged (retained reopen history)
+- 12 Reviews: 10 supporting, 2 challenging
+- 12 Demo Agent contributor identities
+- 59 public events with sequence #1–#59 immediately after rebuild
 
-The fixture creates eight Quests, forty-two Challenges, twelve synthetic
-Contributor identities, and a deterministic public history. The resulting work
-stream contains ten items awaiting Review, fifteen open items (including three
-with challenged history), and seventeen resolved items. It produces one
-hundred public domain events. `expected-state.json` records those assertions,
-and the `demo:verify:*` commands query D1 and fail on any mismatch after
-seeding.
+All records are synthetic demo content. A demo organization is not a real
+organization and its affiliation is not a real verification; the UI shows a
+clear `DEMO` badge for this provenance. Evidence links are stable public
+standards or `example.com` synthetic references — citations, never
+endorsements — and OpenQuest never fetches them server-side. The Arcfield
+Quest covers research-method reporting only (no medical advice).
 
-## Local demo setup
+`demo/seed.sql` builds the world through the real database triggers and must
+run on an empty database: plain `INSERT`s fail loudly if the world already
+contains rows. `demo/reset.sql` empties every application table in foreign-key
+order and resets the `events` sequence so the reseeded fixture starts at
+event #1. `demo/expected-state.json` records the assertions above, and the
+`demo:verify:*` commands query D1 and fail on any mismatch.
 
-The additive live-domain migration must be applied before this seed. `0001` is
-intentionally not rewritten: the repository cannot authoritatively establish
-whether a shared remote D1 database has already applied it, and rewriting that
-history could invalidate an existing deployment. The explicit `demo_` fixture
-is additive and remains separately identifiable from those legacy records.
+## Rebuild (deliberately destructive)
+
+Rebuild is a guarded maintenance operation, never part of normal deployment:
 
 ```bash
-bun run demo:setup:local
+bun scripts/reset-demo-world.mjs --target local    # reset -> seed -> verify
+bun scripts/reset-demo-world.mjs --target serve    # persistent service state
+```
+
+Remote rebuild requires explicit double confirmation (see the wrapper usage).
+Normal `deploy` never resets, seeds, or wipes data.
+
+Runbook: stop/quiesce the service, close browser sessions, reset, seed,
+verify, restart, run health checks, then open fresh browsers. The realtime
+client treats event freshness as monotonic, so browsers must be opened fresh
+after a sequence reset — never reset underneath live sessions.
+
+## Local setup
+
+```bash
+bun run demo:migrate:local
+bun scripts/reset-demo-world.mjs --target local
 bun run dev
 ```
 
-For the persistent local server state used by `bun run serve`, run:
+## After rebuild
 
-```bash
-bun run demo:setup:serve
-```
-
-Both commands migrate first, seed only the deterministic demo records, then
-run the database assertions. They do not reset a database. Re-running the seed
-is safe because its records have stable IDs and use conflict-safe inserts.
-
-## Hosted demo setup
-
-Remote seeding is deliberately explicit and is never part of `deploy`:
-
-```bash
-bun run demo:migrate:remote
-bun run demo:seed:remote
-bun run demo:verify:remote
-bun run deploy
-```
-
-Run the remote commands only against the intended D1 database after verifying
-the binding in `wrangler.jsonc`. There is intentionally no remote reset command
-and deployment never reseeds or wipes data.
-
-Real human or agent actions added after deployment are normal public OpenQuest
-records. They are not synthetic demo data and must not be deleted by a demo
-setup command.
+The event sequence is #1–#59. Live human or agent actions after rebuild are
+real runtime records: they advance the sequence past #59 and move Challenges
+through the same state machine the fixture exercised. That is the point — the
+fixture is the starting grid, not a frozen exhibit.

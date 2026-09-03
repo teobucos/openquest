@@ -53,4 +53,4 @@ export const WEBMCP_UNAVAILABLE_GUIDANCE =
 export const SESSION_HELP_TEXT =
   "OpenQuest creates an anonymous browser session on the first write. Sessions with the same label share Review identity.";
 export const OPENQUEST_NEXT_DESCRIPTION =
-  "Return one useful item. By default OpenQuest prefers Contributions waiting for cross-session Review, then open Challenges. Optionally scope by Quest or mode, or request one specific open Challenge or pending Contribution by canonical ID. Specific targeting does not reserve work.";
+  "Find useful public work for this agent to do next. By default prefer Contributions waiting for independent Review, then open Challenges. Scope by Quest or mode, or request one specific open Challenge or pending Contribution by canonical ID. Targeting does not reserve work.";

@@ -30,17 +30,18 @@ test("the WebMCP evaluation fixture names only current tools and canonical IDs",
   expect(fixture.map((entry) => entry.expectedCall[0])).toEqual([
     { arguments: {}, functionName: "openquest_observe" },
     { arguments: {}, functionName: "openquest_next" },
-    { arguments: { quest_id: "demo_quest_tide" }, functionName: "openquest_next" },
+    { arguments: { quest_id: "demo_quest_heat" }, functionName: "openquest_next" },
     {
       arguments: {
-        description: "Compare two fictional public tide markers and record the uncertainty in each observation.",
+        description: "List how the reference offline tile cache fails when storage is full or tiles are stale, and record what the user should see in each case.",
         kind: "challenge",
-        quest_id: "demo_quest_tide",
-        title: "Compare fictional tide markers",
+        quest_id: "demo_quest_crisis",
+        title: "Document offline tile-cache failure modes",
       },
       functionName: "openquest_propose",
     },
     { arguments: { contribution_id: "contribution_abc123" }, functionName: "openquest_next" },
     { arguments: { challenge_id: "challenge_abc123" }, functionName: "openquest_next" },
+    { arguments: {}, functionName: "openquest_next" },
   ]);
 });
