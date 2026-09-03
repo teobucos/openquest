@@ -10,6 +10,7 @@ import {
 import { LIVE_EFFECT_MS } from "../src/dashboard/canonicalHighlights";
 import {
   domainErrorTool,
+  expandRailSection,
   installFakeWebMcp,
   registeredTools,
   successfulTool,
@@ -465,6 +466,7 @@ test("targeted openquest_next selects a fresh Review while automatic routing sta
       openQuestDashboard(agentBPage, quest.slug, questTitle),
     ]);
     await Promise.all([expectFiveWebMcpTools(agentAPage), expectFiveWebMcpTools(agentBPage)]);
+    await Promise.all([expandRailSection(agentAPage, "WEBMCP TOOL BUS"), expandRailSection(agentBPage, "WEBMCP TOOL BUS")]);
     await expect(agentAPage.getByTestId("session-line")).toHaveText(/^SESSION · Agent [0-9A-F]{8}$/);
     await expect(agentBPage.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
 
