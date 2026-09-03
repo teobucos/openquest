@@ -164,8 +164,7 @@ function CreateQuestForm({
     }
   }
   return (
-    <details className="ops-panel rail-section create-panel" open={open} onToggle={(event) => onOpenChange(event.currentTarget.open)}>
-      <summary className="panel-heading"><h2>CREATE A QUEST</h2><span aria-hidden="true">+</span></summary>
+    <RailSection className="create-panel" title="CREATE A QUEST" open={open} onToggle={() => onOpenChange(!open)}>
       <div className="create-body">
         <p className="create-safety">Everything on OpenQuest is public. Do not submit confidential, proprietary, personal, credential, or secret information.</p>
         <form className="quest-form" onSubmit={submit}>
@@ -176,7 +175,7 @@ function CreateQuestForm({
           {message ? <p className="form-error" role="alert">{message}</p> : null}
         </form>
       </div>
-    </details>
+    </RailSection>
   );
 }
 
@@ -197,7 +196,15 @@ export function ControlCenter({
   refreshError: string | null;
   liveStatus?: LiveStatus;
 }) {
-  const [creating, setCreating] = useState(false);
+  const [railOpen, setRailOpen] = useState({
+    quests: true,
+    contributors: false,
+    webmcp: false,
+    create: false,
+  });
+  const toggleRail = (id: "quests" | "contributors" | "webmcp" | "create") => {
+    setRailOpen((current) => ({ ...current, [id]: !current[id] }));
+  };
   const scopedQuest = route.scope.kind === "quest" && data.quests[0]?.slug === route.scope.slug
     ? data.quests[0]
     : null;
@@ -231,7 +238,7 @@ export function ControlCenter({
           <div className="command-actions">
             <LiveIndicator status={liveStatus} error={refreshError} />
             <span className={`sync-stamp${highlights.latestSequence === data.freshness.last_sequence ? " is-fresh" : ""}`} data-testid="latest-event-indicator">LATEST EVENT #{data.freshness.last_sequence}</span>
-            {route.scope.kind === "network" ? <button className="compact-action" type="button" onClick={() => setCreating(true)}>+ NEW QUEST</button> : null}
+            {route.scope.kind === "network" ? <button className="compact-action" type="button" onClick={() => setRailOpen((current) => ({ ...current, create: true }))}>+ NEW QUEST</button> : null}
           </div>
         </section>
 
@@ -248,10 +255,12 @@ export function ControlCenter({
           />
           <ActivityPanel data={data} latestEventSequence={highlights.latestEventSequence} />
           <aside className="command-rail" aria-label="OpenQuest context">
-            {route.scope.kind === "network" ? <QuestList data={data} route={route} onNavigate={onNavigate} /> : <QuestContext quest={scopedQuest} data={data} />}
-            <ContributorPanel data={data} />
-            <WebMcpPanel tools={tools} viewer={data.viewer} prompt={route.scope.kind === "quest" ? "Help move this Quest forward." : "Help with whatever is most useful."} />
-            {route.scope.kind === "network" ? <CreateQuestForm open={creating} onOpenChange={setCreating} onCreated={(slug) => navigate({ scope: { kind: "quest", slug }, filter: "all", challengeId: null })} /> : null}
+            {route.scope.kind === "network"
+              ? <QuestList data={data} route={route} onNavigate={onNavigate} open={railOpen.quests} onToggle={() => toggleRail("quests")} />
+              : <QuestContext quest={scopedQuest} data={data} open={railOpen.quests} onToggle={() => toggleRail("quests")} />}
+            <ContributorPanel data={data} open={railOpen.contributors} onToggle={() => toggleRail("contributors")} />
+            <WebMcpPanel tools={tools} viewer={data.viewer} prompt={route.scope.kind === "quest" ? "Help move this Quest forward." : "Help with whatever is most useful."} open={railOpen.webmcp} onToggle={() => toggleRail("webmcp")} />
+            {route.scope.kind === "network" ? <CreateQuestForm open={railOpen.create} onOpenChange={(open) => setRailOpen((current) => ({ ...current, create: open }))} onCreated={(slug) => navigate({ scope: { kind: "quest", slug }, filter: "all", challengeId: null })} /> : null}
           </aside>
           <section className="ops-panel primitive-pipeline" aria-labelledby="pipeline-title">
             <div className="panel-heading"><h2 id="pipeline-title">PRIMITIVE PIPELINE</h2><span>PUBLIC STATE FLOW</span></div>
@@ -362,31 +371,41 @@ function ActivityPanel({
 function RailSection({
   children,
   className,
-  defaultOpen = false,
   meta,
+  onToggle,
+  open,
   title,
 }: {
   children: ReactNode;
   className: string;
-  defaultOpen?: boolean;
   meta?: string;
+  onToggle: () => void;
+  open: boolean;
   title: string;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   return (
-    <details className={`ops-panel rail-section ${className}`} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary className="panel-heading">
+    <section className={`ops-panel rail-section${open ? " is-open" : ""} ${className}`}>
+      <button type="button" className="panel-heading" aria-expanded={open} onClick={onToggle}>
         <h2>{title}</h2>
         {meta ? <span>{meta}</span> : null}
-      </summary>
-      <div className="rail-section-body">{children}</div>
-    </details>
+        <span className="rail-toggle" aria-hidden="true">{open ? "–" : "+"}</span>
+      </button>
+      {open ? <div className="rail-section-body">{children}</div> : null}
+    </section>
   );
 }
 
-function ContributorPanel({ data }: { data: ObserveResponse }) {
+function ContributorPanel({
+  data,
+  onToggle,
+  open,
+}: {
+  data: ObserveResponse;
+  onToggle: () => void;
+  open: boolean;
+}) {
   return (
-    <RailSection className="contributor-panel" title="RECENT CONTRIBUTORS" meta={`${data.contributor_count} TOTAL`}>
+    <RailSection className="contributor-panel" title="RECENT CONTRIBUTORS" meta={`${data.contributor_count} TOTAL`} open={open} onToggle={onToggle}>
       <div className="contributor-list">
         {data.recent_contributors.map((contributor) => (
           <div className="contributor-row" key={contributor.actor_label}>
@@ -429,18 +448,22 @@ function Metric({
 }
 
 function WebMcpPanel({
+  onToggle,
+  open,
+  prompt,
   tools,
   viewer,
-  prompt,
 }: {
+  onToggle: () => void;
+  open: boolean;
+  prompt: string;
   tools: WebMCPToolsState;
   viewer: ObserveResponse["viewer"];
-  prompt: string;
 }) {
   const state = webMcpSurfaceState(tools);
   const sessionLine = viewer ? `SESSION · ${viewer.actor_label}` : "SESSION · NOT ESTABLISHED";
   return (
-    <RailSection className="webmcp-panel" title="WEBMCP TOOL BUS" meta={webMcpPanelLabel(state)}>
+    <RailSection className="webmcp-panel" title="WEBMCP TOOL BUS" meta={webMcpPanelLabel(state)} open={open} onToggle={onToggle}>
       <p className="session-line" data-testid="session-line" title={SESSION_HELP_TEXT}>{sessionLine}</p>
       <p className="agent-instruction">Use with an agent: “{prompt}”</p>
       <div className="tool-list">
@@ -469,9 +492,21 @@ function WebMcpPanel({
   );
 }
 
-function QuestList({ data, route, onNavigate }: { data: ObserveResponse; route: RouteState; onNavigate: RouteNavigationHandler }) {
+function QuestList({
+  data,
+  onNavigate,
+  onToggle,
+  open,
+  route,
+}: {
+  data: ObserveResponse;
+  onNavigate: RouteNavigationHandler;
+  onToggle: () => void;
+  open: boolean;
+  route: RouteState;
+}) {
   return (
-    <RailSection className="quest-list-panel" title="QUESTS" meta={`${data.quests.length} VISIBLE`} defaultOpen>
+    <RailSection className="quest-list-panel" title="QUESTS" meta={`${data.quests.length} VISIBLE`} open={open} onToggle={onToggle}>
       <div className="quest-list">
         {data.quests.map((quest, index) => {
           const total = quest.counts.open + quest.counts.awaiting_review + quest.counts.resolved;
@@ -494,11 +529,21 @@ function QuestList({ data, route, onNavigate }: { data: ObserveResponse; route: 
   );
 }
 
-function QuestContext({ quest, data }: { quest: ObserveResponse["quests"][number] | null; data: ObserveResponse }) {
+function QuestContext({
+  data,
+  onToggle,
+  open,
+  quest,
+}: {
+  data: ObserveResponse;
+  onToggle: () => void;
+  open: boolean;
+  quest: ObserveResponse["quests"][number] | null;
+}) {
   if (!quest) return null;
   const results = data.work_stream.filter((item) => item.stream_state === "resolved").slice(0, 3);
   return (
-    <RailSection className="quest-context-panel" title="QUEST CONTEXT" meta={quest.is_demo ? "DEMO" : quest.organization ? "PROVENANCE" : "COMMUNITY"} defaultOpen>
+    <RailSection className="quest-context-panel" title="QUEST CONTEXT" meta={quest.is_demo ? "DEMO" : quest.organization ? "PROVENANCE" : "COMMUNITY"} open={open} onToggle={onToggle}>
       <div className="quest-context-body">
         <p>{quest.description || quest.goal}</p>
         {quest.organization ? <p className="provenance-copy">{demoPrefix(quest)}{quest.organization.name} · {quest.organization.verification_status}{quest.organization.ror_id ? ` · ${quest.organization.ror_id}` : ""}</p> : null}

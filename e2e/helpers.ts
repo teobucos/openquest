@@ -203,11 +203,11 @@ export function challengeRow(page: Page, title: string) {
 }
 
 export async function expandRailSection(page: Page, title: string): Promise<void> {
-  const section = page.locator("aside.command-rail details").filter({
+  const section = page.locator("aside.command-rail .rail-section").filter({
     has: page.getByRole("heading", { name: title, exact: true }),
   });
-  await expect(section).toBeVisible();
-  const opened = await section.evaluate((node) => node instanceof HTMLDetailsElement && node.open);
-  if (!opened) await section.locator(":scope > summary").click();
-  await expect(section).toHaveJSProperty("open", true);
+  const toggle = section.getByRole("button").first();
+  await expect(toggle).toBeVisible();
+  if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
 }
