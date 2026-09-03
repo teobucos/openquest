@@ -214,8 +214,8 @@ test("the command center follows the system color scheme", async ({ page }) => {
   await expect(page.locator("meta[name=color-scheme]")).toHaveAttribute("content", "light dark");
 
   await page.emulateMedia({ colorScheme: "light" });
-  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(232, 235, 228)");
-  expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe("rgb(16, 20, 23)");
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(230, 238, 240)");
+  expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe("rgb(8, 16, 18)");
 
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(9, 12, 13)");
