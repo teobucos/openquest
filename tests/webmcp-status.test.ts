@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import {
-  OPENQUEST_NEXT_DESCRIPTION,
   WEBMCP_UNAVAILABLE_GUIDANCE,
   webMcpHeaderLabel,
   webMcpPanelLabel,
@@ -23,6 +22,4 @@ test("WebMCP header and panel labels stay truthful and do not claim browser unsu
   expect(webMcpPanelLabel("unavailable")).not.toBe("NOT AVAILABLE");
   expect(WEBMCP_UNAVAILABLE_GUIDANCE).toContain("chrome://flags/#enable-webmcp-testing");
   expect(WEBMCP_UNAVAILABLE_GUIDANCE).not.toContain("will fix");
-  expect(OPENQUEST_NEXT_DESCRIPTION).toContain("specific open Challenge or pending Contribution");
-  expect(OPENQUEST_NEXT_DESCRIPTION).toContain("does not reserve work");
 });

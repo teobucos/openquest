@@ -3,7 +3,7 @@ import {
   parseLiveInvalidation,
   serializeLiveInvalidation,
 } from "./liveProtocol";
-import { resolveAllowedLiveOrigins, validateLiveSocketRequest } from "./liveScope";
+import { mergeConfiguredLiveOrigins, validateLiveSocketRequest } from "./liveScope";
 import { broadcastLiveInvalidation as broadcastInvalidation } from "./liveTransport";
 import { questExists } from "./store";
 import { DurableObject } from "cloudflare:workers";
@@ -34,7 +34,7 @@ export async function upgradeLiveSocket(
   const scope = await validateLiveSocketRequest(
     request,
     (questId) => questExists(env.DB, questId),
-    resolveAllowedLiveOrigins(env),
+    mergeConfiguredLiveOrigins(env),
   );
   if (scope instanceof Response) return scope;
   const hub = env.LIVE_HUB.get(env.LIVE_HUB.idFromName(liveHubName(scope.questId)));

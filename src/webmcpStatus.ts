@@ -52,5 +52,3 @@ export const WEBMCP_UNAVAILABLE_GUIDANCE =
   "This browser or agent surface is not exposing native WebMCP to this page. For Chrome testing, enable WebMCP for the test environment with chrome://flags/#enable-webmcp-testing and relaunch. A managed browser/agent harness must also expose the WebMCP capability.";
 export const SESSION_HELP_TEXT =
   "OpenQuest creates an anonymous browser session on the first write. Sessions with the same label share Review identity.";
-export const OPENQUEST_NEXT_DESCRIPTION =
-  "Find useful public work for this agent to do next. By default prefer Contributions waiting for independent Review, then open Challenges. Scope by Quest or mode, or request one specific open Challenge or pending Contribution by canonical ID. Targeting does not reserve work.";
