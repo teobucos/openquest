@@ -36,7 +36,7 @@ test("home explains unavailable WebMCP and an empty active Quest list", async ({
   await expect(page.getByText("WebMCP · unavailable", { exact: true })).toBeVisible();
   await expandRailSection(page, "WEBMCP TOOL BUS");
   await expect(page.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
-  await expect(page.locator(".webmcp-panel span").filter({ hasText: "NOT AVAILABLE" })).toBeVisible();
+  await expect(page.locator(".webmcp-panel span").filter({ hasText: "UNAVAILABLE" })).toBeVisible();
   await page.getByText("WebMCP diagnostics", { exact: true }).click();
   await expect(page.getByText("document.modelContext: NOT DETECTED")).toBeVisible();
   await expect(page.getByText("chrome://flags/#enable-webmcp-testing")).toBeVisible();

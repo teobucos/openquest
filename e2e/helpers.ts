@@ -206,7 +206,7 @@ export async function expandRailSection(page: Page, title: string): Promise<void
   const section = page.locator("aside.command-rail .rail-section").filter({
     has: page.getByRole("heading", { name: title, exact: true }),
   });
-  const toggle = section.getByRole("button").first();
+  const toggle = section.locator(".rail-heading-toggle");
   await expect(toggle).toBeVisible();
   if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
