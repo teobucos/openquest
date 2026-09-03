@@ -1,15 +1,50 @@
 {
-  "fixture_version": 1,
+  "fixture_version": 2,
   "id_prefix": "demo_",
-  "organizations": 4,
-  "quests": 8,
+  "organizations": 5,
+  "quests": 5,
+  "demo_quests": 5,
   "contributors": 12,
-  "demo_quests": 8,
-  "public_events": 100,
-  "work_stream": {
-    "review": 10,
-    "open": 15,
-    "resolved": 17
+  "open": 10,
+  "awaiting_review": 5,
+  "resolved": 10,
+  "reopened_history": 2,
+  "public_events": 59,
+  "contributions": {
+    "pending": 5,
+    "accepted": 10,
+    "challenged_retained": 2
   },
-  "reopened_history": 3
+  "reviews": {
+    "supporting": 10,
+    "challenging": 2
+  },
+  "one_quest_per_org": 5,
+  "verified_organizations": 0,
+  "ror_ids": 0,
+  "community_quests": 0,
+  "event_composition": {
+    "quest_created": 5,
+    "challenge_created": 25,
+    "contribution_created": 17,
+    "review_supported": 10,
+    "review_challenged": 2
+  },
+  "event_sequence": {
+    "first": 1,
+    "last": 59
+  },
+  "organization_quests": {
+    "demo_org_arcfield": "demo_quest_repro",
+    "demo_org_northstar": "demo_quest_heat",
+    "demo_org_openrelay": "demo_quest_crisis",
+    "demo_org_commonlight": "demo_quest_stem",
+    "demo_org_mosaic": "demo_quest_prov"
+  },
+  "deterministic_targets": {
+    "oldest_pending_review_challenge_id": "demo_challenge_heat_03",
+    "oldest_pending_review_challenge_title": "Draft a transparent cooling-intervention comparison rubric",
+    "oldest_arcfield_open_challenge_id": "demo_challenge_repro_01",
+    "oldest_arcfield_open_challenge_title": "Define minimum reproducibility fields for organoid assay reports"
+  }
 }

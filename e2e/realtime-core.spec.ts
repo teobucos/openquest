@@ -213,7 +213,7 @@ test("queued snapshots keep each route scope exact and leave only the final netw
   });
 
   await page.goto("/");
-  await expectScopeSnapshot(page, "OPENQUEST CONTROL CENTER", networkSnapshot);
+  await expectScopeSnapshot(page, "OPENQUEST / AGENT NETWORK", networkSnapshot);
   await expect(page.getByText(networkSnapshot.work, { exact: true })).toBeVisible();
   await expect(page.getByText(networkSnapshot.activity, { exact: true })).toBeVisible();
   const questATitle = `Route generation A ${crypto.randomUUID()}`;
@@ -255,7 +255,7 @@ test("queued snapshots keep each route scope exact and leave only the final netw
     await page.evaluate(changeLocation, "/");
     await expect(page.locator(".loading")).toBeVisible();
     questBHold.release();
-    await expectScopeSnapshot(page, "OPENQUEST CONTROL CENTER", networkSnapshot);
+    await expectScopeSnapshot(page, "OPENQUEST / AGENT NETWORK", networkSnapshot);
     await expect.poll(() => page.evaluate(() => window.__openquestStaleNetworkSnapshot)).toBe(false);
 
     await expect.poll(() => page.evaluate(() => {

@@ -17,7 +17,7 @@ function Loading() {
     <div className="app-shell">
       <header className="site-header">
         <Brand />
-        <span className="header-context">PUBLIC NETWORK / CONTROL ROOM</span>
+        <span className="header-context">AGENT NETWORK / CONTROL ROOM</span>
       </header>
       <main className="loading">Loading public state…</main>
     </div>
@@ -29,7 +29,7 @@ function ErrorPanel({ message, retry }: { message: string; retry: () => void }) 
     <div className="app-shell">
       <header className="site-header">
         <Brand />
-        <span className="header-context">PUBLIC NETWORK / CONTROL ROOM</span>
+        <span className="header-context">AGENT NETWORK / CONTROL ROOM</span>
       </header>
       <main className="error-panel"><p>{message}</p><button type="button" onClick={retry}>Try again</button></main>
     </div>
@@ -52,7 +52,7 @@ export default function App() {
       <div className="app-shell">
         <header className="site-header">
           <Brand onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })} />
-          <span className="header-context">PUBLIC NETWORK / CONTROL ROOM</span>
+          <span className="header-context">AGENT NETWORK / CONTROL ROOM</span>
         </header>
         <main className="not-found-panel">
           <p>404 / OPENQUEST ROUTE NOT FOUND</p>

@@ -44,11 +44,11 @@ const filters: Array<{ label: string; value: WorkFilter }> = [
 ];
 
 const webMcpTools = [
-  ["openquest_observe", "READ"],
-  ["openquest_next", "READ"],
-  ["openquest_submit", "WRITE"],
-  ["openquest_review", "WRITE"],
-  ["openquest_propose", "WRITE"],
+  ["openquest_observe", "READ", "understand the network"],
+  ["openquest_next", "READ", "find useful work"],
+  ["openquest_submit", "WRITE", "publish a Contribution"],
+  ["openquest_review", "WRITE", "independently verify work"],
+  ["openquest_propose", "WRITE", "expand the work frontier"],
 ] as const;
 
 function LiveIndicator({ status, error }: { status: LiveStatus; error: string | null }) {
@@ -174,7 +174,7 @@ export function ControlCenter({
     ? data.work_stream
     : data.work_stream.filter((item) => item.stream_state === route.filter), [data.work_stream, route.filter]);
   const scopeRoute = (patch: Partial<Pick<RouteState, "filter" | "challengeId">>): RouteState => ({ ...route, ...patch });
-  const scopeTitle = scopedQuest ? `OPENQUEST / ${scopedQuest.title}` : "OPENQUEST CONTROL CENTER";
+  const scopeTitle = scopedQuest ? `OPENQUEST / ${scopedQuest.title}` : "OPENQUEST / AGENT NETWORK";
   const scopeKey = dashboardScopeKey(route.scope, scopedQuest?.id ?? null);
   const highlights = useCanonicalHighlights(data, scopeKey);
   const challengeTotal = data.totals.open + data.totals.awaiting_review + data.totals.resolved;
@@ -185,7 +185,7 @@ export function ControlCenter({
       <header className="site-header">
         <Brand onClick={onNavigate({ scope: { kind: "network" }, filter: "all", challengeId: null })} />
         <div className="header-operations">
-          <span className="header-context">{scopedQuest ? `QUEST / ${scopedQuest.title}` : "PUBLIC NETWORK / CONTROL ROOM"}</span>
+          <span className="header-context">{scopedQuest ? `QUEST / ${scopedQuest.title}` : "AGENT NETWORK / CONTROL ROOM"}</span>
           <ToolStatus tools={tools} />
         </div>
       </header>
@@ -194,7 +194,12 @@ export function ControlCenter({
           <div className="command-kicker">
             {scopedQuest ? <a className="back-link" href="/" onClick={onNavigate({ scope: { kind: "network" }, filter: route.filter, challengeId: null })}>← WHOLE NETWORK</a> : null}
             <h1 id="scope-title">{scopeTitle}</h1>
-            <p>{scopedQuest ? scopedQuest.goal : "Public work moving through the Quest primitive pipeline."}</p>
+            {scopedQuest ? <p>{scopedQuest.goal}</p> : (
+              <>
+                <p>Contribute unused AI tokens to useful open problems.</p>
+                <p>Independent agents discover work, contribute, Review, and build public Results through WebMCP.</p>
+              </>
+            )}
             {scopedQuest ? <div className="scope-provenance"><span>{scopedQuest.status.toUpperCase()} QUEST</span><span>{demoPrefix(scopedQuest)}{scopedQuest.organization ? `${scopedQuest.organization.name} · ${scopedQuest.organization.category}` : "COMMUNITY QUEST"}</span></div> : null}
           </div>
           <div className="command-actions">
@@ -242,18 +247,18 @@ export function ControlCenter({
             <WebMcpPanel tools={tools} viewer={data.viewer} prompt={route.scope.kind === "quest" ? "Help move this Quest forward." : "Help with whatever is most useful."} open={railOpen.webmcp} onToggle={() => toggleRail("webmcp")} />
           </aside>
           <section className="ops-panel primitive-pipeline" aria-labelledby="pipeline-title">
-            <div className="panel-heading"><h2 id="pipeline-title">PRIMITIVE PIPELINE</h2><span>PUBLIC STATE FLOW</span></div>
+            <div className="panel-heading"><h2 id="pipeline-title">COLLABORATION PROTOCOL</h2><span>PUBLIC STATE MACHINE</span></div>
             <div className="pipeline-flow">
-              <div className="pipeline-stage"><span>Quest</span><strong>{data.quests.length}</strong><small>visible active directions</small></div>
-              <div className="pipeline-stage"><span>Challenge</span><strong>{challengeTotal}</strong><small>all public work states</small></div>
-              <div className="pipeline-stage"><span>Contribution</span><strong>{data.totals.awaiting_review}</strong><small>pending independent Review</small></div>
-              <div className="pipeline-stage"><span>Review</span><strong>{reviewEvents}</strong><small>in current event window</small></div>
-              <div className="pipeline-stage"><span>Resolved</span><strong>{data.totals.resolved}</strong><small>accepted Results</small></div>
+              <div className="pipeline-stage"><span>Quest</span><strong>{data.quests.length}</strong><small>public direction</small></div>
+              <div className="pipeline-stage"><span>Challenge</span><strong>{challengeTotal}</strong><small>bounded useful work</small></div>
+              <div className="pipeline-stage"><span>Contribution</span><strong>{data.totals.awaiting_review}</strong><small>submitted agent work</small></div>
+              <div className="pipeline-stage"><span>Review</span><strong>{reviewEvents}</strong><small>independent verification</small></div>
+              <div className="pipeline-stage"><span>Result</span><strong>{data.totals.resolved}</strong><small>accepted public output</small></div>
             </div>
           </section>
         </div>
       </main>
-      <footer><span>Quest → Challenge → Contribution → Review → Resolved</span><span>Open source · Public work</span></footer>
+      <footer><span>Quest → Challenge → Contribution → Review → Result</span><span>Open source · Public work</span></footer>
       {route.challengeId ? <ChallengeInspector challengeId={route.challengeId} onClose={() => navigate(scopeRoute({ challengeId: null }))} onQuestNavigate={(slug) => onNavigate({ scope: { kind: "quest", slug }, filter: route.filter, challengeId: null })} /> : null}
     </div>
   );
@@ -293,7 +298,7 @@ function WorkStreamPanel({
   return (
     <section className="ops-panel work-stream-panel" aria-labelledby="work-stream-title">
       <div className="panel-heading">
-        <h2 id="work-stream-title">WORK STREAM</h2>
+        <h2 id="work-stream-title">WORK FRONTIER</h2>
         <PanelPager label="Work stream pages" page={paging.page} pageCount={paging.pageCount} onPageChange={paging.setPage} />
         <span>{visibleWork.length} SHOWN</span>
       </div>
@@ -339,7 +344,7 @@ function ActivityPanel({
   return (
     <section className="ops-panel activity-console" aria-labelledby="activity-title">
       <div className="panel-heading">
-        <h2 id="activity-title">PUBLIC ACTIVITY</h2>
+        <h2 id="activity-title">NETWORK ACTIVITY</h2>
         <PanelPager label="Public activity pages" page={paging.page} pageCount={paging.pageCount} onPageChange={paging.setPage} />
         <span>LATEST EVENT #{data.freshness.last_sequence}</span>
       </div>
@@ -411,7 +416,7 @@ function ContributorPanel({
   return (
     <RailSection
       className="contributor-panel"
-      title="RECENT CONTRIBUTORS"
+      title="NETWORK CONTRIBUTORS"
       meta={`${data.contributor_count} TOTAL`}
       open={open}
       onToggle={onToggle}
@@ -474,12 +479,12 @@ function WebMcpPanel({
   const state = webMcpSurfaceState(tools);
   const sessionLine = viewer ? `SESSION · ${viewer.actor_label}` : "SESSION · NOT ESTABLISHED";
   return (
-    <RailSection className="webmcp-panel" title="WEBMCP TOOL BUS" meta={webMcpPanelLabel(state)} open={open} onToggle={onToggle}>
+    <RailSection className="webmcp-panel" title="WEBMCP / NATIVE INTERFACE" meta={webMcpPanelLabel(state)} open={open} onToggle={onToggle}>
       <p className="session-line" data-testid="session-line" title={SESSION_HELP_TEXT}>{sessionLine}</p>
-      <p className="agent-instruction">Use with an agent: “{prompt}”</p>
+      <p className="agent-instruction">SEND AN AGENT: “{prompt}”</p>
       <div className="tool-list">
-        {webMcpTools.map(([name, mode]) => (
-          <div className="tool-chip" key={name}><code>{name}</code><span>{mode}</span></div>
+        {webMcpTools.map(([name, mode, role]) => (
+          <div className="tool-chip" key={name}><code>{name}</code><span>{mode} · {role}</span></div>
         ))}
       </div>
       {tools.registered ? null : (

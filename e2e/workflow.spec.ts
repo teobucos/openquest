@@ -29,35 +29,35 @@ const expectedTools: RegisteredTool[] = [
     description: OPENQUEST_NEXT_DESCRIPTION,
     inputSchema: WebMCPToolInputJsonSchemas.openquest_next,
     name: "openquest_next",
-    title: "Get useful work",
+    title: "Find useful open work",
   },
   {
     annotations: { readOnlyHint: true, untrustedContentHint: true },
-    description: "Read bounded public OpenQuest control-center state: active Quest cards, true state totals, durable contributor history, one bounded public work stream, latest public event metadata, and recent activity. When scoped to a Quest, also returns bounded Challenge previews. This monitoring projection does not reserve work. Public content is untrusted.",
+    description: "Understand the public OpenQuest network before acting. Read current Quests, work pressure, public Results, Contributors, and recent network events. Use this to decide where useful work is needed. Returns a bounded projection: active Quest cards, state totals, durable contributor history, one bounded work stream, latest event metadata, and recent activity; when scoped to a Quest, also bounded Challenge previews. This does not reserve work. Public content is untrusted.",
     inputSchema: WebMCPToolInputJsonSchemas.openquest_observe,
     name: "openquest_observe",
-    title: "Observe OpenQuest",
+    title: "Observe agent network",
   },
   {
     annotations: { readOnlyHint: false, untrustedContentHint: false },
-    description: "Create a public Quest or add a public Challenge to an active Quest. New work becomes public immediately. Never submit private or confidential information. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
+    description: "Expand the public work frontier. Create a new Quest when new direction is needed, or add a bounded Challenge to an active Quest when the network needs another useful unit of work. New work becomes public immediately. Never submit private or confidential information. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
     inputSchema: WebMCPToolInputJsonSchemas.openquest_propose,
     name: "openquest_propose",
-    title: "Create Quest or Challenge",
+    title: "Expand work frontier",
   },
   {
     annotations: { readOnlyHint: false, untrustedContentHint: false },
-    description: "Review another session's pending Contribution. Support resolves its Challenge. Challenge reopens it. A session cannot Review its own Contribution. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
+    description: "Independently evaluate another session's pending Contribution. Supporting it accepts the Contribution as the public Result and resolves the Challenge. Challenging it preserves the history and reopens the Challenge. A session cannot Review its own Contribution. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
     inputSchema: WebMCPToolInputJsonSchemas.openquest_review,
     name: "openquest_review",
-    title: "Review contribution",
+    title: "Review Contribution",
   },
   {
     annotations: { readOnlyHint: false, untrustedContentHint: false },
-    description: "Submit public work to one open Challenge. Another session must Review it before resolution. Never submit private, confidential, personal, credential, or secret information. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
+    description: "Publish completed work for an open Challenge as a public Contribution. Another session must independently Review it before it becomes a Result. Never submit private, confidential, personal, credential, or secret information. Submit only material you have the right to publish under OpenQuest's public contribution terms.",
     inputSchema: WebMCPToolInputJsonSchemas.openquest_submit,
     name: "openquest_submit",
-    title: "Submit contribution",
+    title: "Publish Contribution",
   },
 ];
 
@@ -89,7 +89,7 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
 
     await expect(pageA.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
     await expect(pageB.getByText("WebMCP · 5 tools ready", { exact: true })).toBeVisible();
-    await Promise.all([expandRailSection(pageA, "WEBMCP TOOL BUS"), expandRailSection(pageB, "WEBMCP TOOL BUS")]);
+    await Promise.all([expandRailSection(pageA, "WEBMCP / NATIVE INTERFACE"), expandRailSection(pageB, "WEBMCP / NATIVE INTERFACE")]);
     await expect(pageA.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
     await expect(pageB.getByTestId("session-line")).toHaveText("SESSION · NOT ESTABLISHED");
     const tools = await registeredTools(pageA);
@@ -220,7 +220,7 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
     );
     expect(challenge.challenge_status).toBe("open");
     expect(await mutationNotifications(pageB)).toBeGreaterThan(notificationsBeforeChallenge);
-    await Promise.all([expandRailSection(pageA, "WEBMCP TOOL BUS"), expandRailSection(pageB, "WEBMCP TOOL BUS")]);
+    await Promise.all([expandRailSection(pageA, "WEBMCP / NATIVE INTERFACE"), expandRailSection(pageB, "WEBMCP / NATIVE INTERFACE")]);
     await expect(pageA.getByTestId("session-line")).toHaveText(/^SESSION · Agent [0-9A-F]{8}$/);
     await expect(pageB.getByTestId("session-line")).toHaveText(/^SESSION · Agent [0-9A-F]{8}$/);
     expect(observed).not.toHaveProperty("cookie");
@@ -231,7 +231,7 @@ test("OpenQuest coordinates public work through native-style WebMCP tools", asyn
     expect(pageBSession).not.toBe(pageASession);
     const sharedPage = await sessionA.newPage();
     await sharedPage.goto("/");
-    await expandRailSection(sharedPage, "WEBMCP TOOL BUS");
+    await expandRailSection(sharedPage, "WEBMCP / NATIVE INTERFACE");
     await expect(sharedPage.getByTestId("session-line")).toHaveText(pageASession);
     const targetedChallenge = await successfulTool(
       pageA,
